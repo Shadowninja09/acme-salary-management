@@ -1,76 +1,86 @@
 # ACME Employee Salary Management System
 
-A web-based employee and salary management application designed to help ACME's HR team manage employee records, track salary history, and analyze compensation across the organization.
+Web application for ACME’s HR Manager to maintain employee and salary records and analyze how the organization pays about 10,000 people across countries.
 
-## Problem Statement
+This repository is an Incubyte engineering assessment. Design documents exist; application features are not implemented yet.
 
-ACME manages approximately 10,000 employees across multiple countries using Excel spreadsheets. As the organization grows, maintaining accurate employee records, tracking salary changes, and understanding compensation patterns becomes increasingly difficult.
+## Requirements
 
-This project aims to centralize employee and salary information in a maintainable application and provide reliable compensation analytics to support HR decision-making.
+- One-page brief: [`docs/requirements-brief.md`](docs/requirements-brief.md)
+- Full specification: [`docs/requirements.md`](docs/requirements.md)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- Database design: [`docs/database-design.md`](docs/database-design.md)
+- Delivery (deploy, demo, submit): [`docs/delivery-checklist.md`](docs/delivery-checklist.md)
+- Working notes: [`artifacts/`](artifacts/)
 
-## Project Objectives
+## Technology stack
 
-- Manage employee information in a centralized system.
-- Maintain salary records and preserve historical changes.
-- Search and filter employee records efficiently.
-- Analyze compensation across countries and departments.
-- Support approximately 10,000 employees using synthetic seed data.
-- Maintain high standards of code quality, testing, and maintainability.
+Chosen in architecture; not all of it exists in the repo yet.
 
-## Planned Features
+| Layer | Choice |
+|---|---|
+| UI | React, Vite (component library not chosen) |
+| API | FastAPI, Pydantic |
+| Data | PostgreSQL, SQLAlchemy, Alembic |
+| Backend tests | pytest, FastAPI TestClient |
+| Frontend tests | Vitest, React Testing Library (planned; no frontend package yet) |
 
-- Employee creation, viewing, and updating.
-- Employee search, filtering, and pagination.
-- Salary management with effective dates and historical records.
-- Compensation analytics, including average, median, minimum, and maximum salaries.
-- Repeatable database seed script for approximately 10,000 synthetic employees.
-- Access control for sensitive employee and salary information.
-- Unit tests for core business logic and validation.
+Backend Python packages are listed in `requirements.txt`. That file has not been verified by installing or running the application in this environment.
 
-## Out of Scope
-
-The initial version will not include payroll processing, tax calculations, attendance or leave management, recruitment, employee self-service, external payroll integrations, Excel/CSV import and export, or AI-powered natural-language analytics.
-
-## Repository Structure
+## Current repository structure
 
 ```text
 acme-salary-management/
+├── artifacts/
+│   ├── README.md
+│   ├── ai-usage.md
+│   ├── trade-offs.md
+│   └── performance.md
 ├── backend/
-├── frontend/
-├── tests/
-├── scripts/
+│   └── app/
+│       ├── core/
+│       │   └── config.py
+│       ├── db/
+│       └── main.py
 ├── docs/
-│   └── requirements.md
+│   ├── requirements-brief.md
+│   ├── requirements.md
+│   ├── architecture.md
+│   ├── database-design.md
+│   └── delivery-checklist.md
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
 
-The directory structure and project files will evolve as the architecture and implementation are finalized.
+Also present at the repo root: the original assessment Word document. Planned but **not created**: `frontend/`, `backend/migrations/`, `backend/tests/`, `scripts/`, and most backend packages described in architecture.
 
-## Development Approach
+`backend/app/main.py` is empty. `backend/app/core/config.py` defines a `database_url` setting only.
 
-The project will be developed incrementally, with a focus on:
+## Project status
 
-- Clear requirements and deliberate design decisions.
-- Separation of business logic, data access, API handling, and frontend responsibilities.
-- Meaningful unit tests covering core functionality.
-- Fast, deterministic, and easy-to-understand tests.
-- Small, focused Git commits that demonstrate the evolution of the solution.
-- Documentation for setup, testing, data seeding, and deployment.
+**Phase:** Documentation aligned with the assessment. Implementation has not started.
 
-AI coding tools may assist with implementation, test creation, and code review. All generated changes will be reviewed and validated before being accepted.
+Not done: employee/salary APIs, UI, migrations, seed, tests, deployment, video demo.
 
-## Requirements
+## Development and testing approach
 
-The project's functional requirements, business rules, acceptance criteria, and non-functional requirements are documented in [`docs/requirements.md`](docs/requirements.md).
+- Implement in small steps with tests beside each behavior.
+- Keep HTTP, business rules, and data access separate (see architecture).
+- Prefer fast, deterministic unit tests; add API/database integration tests for constraints and transactions.
+- Use AI to draft code and tests; review and verify before keeping changes.
+- Commit incrementally so the history shows how the solution evolved.
+- Capture prompts, trade-offs, and performance results under `artifacts/` when they actually occur.
 
-## Technology Stack
+Setup, test, seed, and deploy commands will be added here after they have been run successfully.
 
-The technology stack will be finalized during the architecture and design phase before implementation begins.
+## Open decisions
 
-## Project Status
+These remain unresolved on purpose:
 
-**Phase:** Requirements and project setup.
-
-The initial repository structure and requirements are being prepared. Application features will be implemented after the architecture and technology decisions are finalized.
+1. Authentication for the single HR Manager
+2. Test-database and transaction strategy
+3. API contracts, errors, and pagination conventions
+4. Deployment target and configuration
+5. Audit snapshot details and retention
+6. UI component library
