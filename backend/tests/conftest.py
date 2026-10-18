@@ -4,17 +4,18 @@ from pathlib import Path
 
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+psycopg://acme:acme@localhost:5432/acme_test",
+    "postgresql+psycopg://pytest:pytest@127.0.0.1:1/acme_unused",
 )
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.main import app
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -61,6 +62,16 @@ def db_session(migrated_test_engine: Engine) -> Generator[Session, None, None]:
     connection = migrated_test_engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection)
+    nested = connection.begin_nested()
+
+    @event.listens_for(session, "after_transaction_end")
+    def restart_savepoint(sess: Session, trans: object) -> None:
+        nonlocal nested
+        if connection.closed:
+            return
+        if not connection.in_nested_transaction():
+            nested = connection.begin_nested()
+
     try:
         yield session
     finally:
@@ -69,3 +80,20 @@ def db_session(migrated_test_engine: Engine) -> Generator[Session, None, None]:
         if transaction.is_active:
             transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def api_client(db_session: Session) -> Generator[TestClient, None, None]:
+    def override_get_db() -> Generator[Session, None, None]:
+        try:
+            yield db_session
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)

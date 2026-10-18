@@ -2,7 +2,7 @@
 
 Web application for ACME’s HR Manager to maintain employee and salary records and analyze how the organization pays about 10,000 people across countries.
 
-This repository is an Incubyte engineering assessment. Design documents exist; application features are not implemented yet.
+This repository is an Incubyte engineering assessment. The backend can create, fetch, and paginate employees. Salary workflows, authentication, the frontend, seeding, and deployment are not implemented yet.
 
 ## Requirements
 
@@ -15,72 +15,98 @@ This repository is an Incubyte engineering assessment. Design documents exist; a
 
 ## Technology stack
 
-Chosen in architecture; not all of it exists in the repo yet.
-
 | Layer | Choice |
 |---|---|
-| UI | React, Vite (component library not chosen) |
+| UI | React and Vite (planned; not in the repository yet) |
 | API | FastAPI, Pydantic |
 | Data | PostgreSQL, SQLAlchemy, Alembic |
 | Backend tests | pytest, FastAPI TestClient |
-| Frontend tests | Vitest, React Testing Library (planned; no frontend package yet) |
 
-Backend Python packages are listed in `requirements.txt`. That file has not been verified by installing or running the application in this environment.
+Backend Python packages are listed in `requirements.txt`.
 
-## Current repository structure
+## Current backend capabilities
+
+- `GET /health` — liveness check; does not use the database
+- `POST /api/v1/employees` — create an employee (duplicate `employee_code` returns 409)
+- `GET /api/v1/employees/{employee_id}` — fetch by internal database id
+- `GET /api/v1/employees` — list with `limit` (default 50, max 100) and `offset` (default 0)
+
+## Repository structure
 
 ```text
 acme-salary-management/
 ├── artifacts/
-│   ├── README.md
-│   ├── ai-usage.md
-│   ├── trade-offs.md
-│   └── performance.md
 ├── backend/
-│   └── app/
-│       ├── core/
-│       │   └── config.py
-│       ├── db/
-│       └── main.py
+│   ├── app/
+│   │   ├── api/
+│   │   ├── core/
+│   │   ├── db/
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   └── main.py
+│   ├── migrations/
+│   ├── tests/
+│   ├── alembic.ini
+│   └── pytest.ini
 ├── docs/
-│   ├── requirements-brief.md
-│   ├── requirements.md
-│   ├── architecture.md
-│   ├── database-design.md
-│   └── delivery-checklist.md
+├── .env.example
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
 
-Also present at the repo root: the original assessment Word document. Planned but **not created**: `frontend/`, `backend/migrations/`, `backend/tests/`, `scripts/`, and most backend packages described in architecture.
+There is no `frontend/` package yet.
 
-`backend/app/main.py` is empty. `backend/app/core/config.py` defines a `database_url` setting only.
+## Prerequisites
+
+- Python 3.13 with the packages in `requirements.txt` (this repo uses a `.venv` at the project root)
+- PostgreSQL, with two databases:
+  - `acme_salary` — application data
+  - `acme_test` — automated tests only
+
+Copy `.env.example` to `.env` and replace the placeholders. Do not commit `.env`.
+
+```text
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_salary
+TEST_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_test
+```
+
+**`TEST_DATABASE_URL` must point at `acme_test`, never at `acme_salary`.** Integration tests apply Alembic migrations to that URL and would otherwise change the application database.
+
+pytest reads `TEST_DATABASE_URL` from the process environment. A value only in `.env` is not enough.
+
+## Running tests
+
+From PowerShell, in the current terminal session (use your real username and password, not these placeholders):
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_test"
+Set-Location backend
+..\.venv\Scripts\python.exe -m pytest
+```
+
+If `TEST_DATABASE_URL` is not set, `/health` still runs and passes. Employee persistence and API tests skip with: `TEST_DATABASE_URL is not configured; skipping database integration tests`.
+
+Do not run application migrations as part of pytest setup against `acme_salary`. Tests upgrade the **test** database only.
 
 ## Project status
 
-**Phase:** Documentation aligned with the assessment. Implementation has not started.
+**Phase:** Backend employee persistence and HTTP API.
 
-Not done: employee/salary APIs, UI, migrations, seed, tests, deployment, video demo.
+Not done: authentication, salary records, analytics, 10k seed, frontend, deployment, video demo.
 
-## Development and testing approach
+## Development approach
 
 - Implement in small steps with tests beside each behavior.
-- Keep HTTP, business rules, and data access separate (see architecture).
-- Prefer fast, deterministic unit tests; add API/database integration tests for constraints and transactions.
-- Use AI to draft code and tests; review and verify before keeping changes.
-- Commit incrementally so the history shows how the solution evolved.
-- Capture prompts, trade-offs, and performance results under `artifacts/` when they actually occur.
-
-Setup, test, seed, and deploy commands will be added here after they have been run successfully.
+- Keep HTTP, business rules, and data access separate.
+- Use a dedicated test database and roll back test data; do not point tests at `acme_salary`.
+- Review AI-generated code and validate it through tests.
+- Commit incrementally. Record prompts and trade-offs under `artifacts/` when they occur.
 
 ## Open decisions
 
-These remain unresolved on purpose:
-
 1. Authentication for the single HR Manager
-2. Test-database and transaction strategy
-3. API contracts, errors, and pagination conventions
-4. Deployment target and configuration
-5. Audit snapshot details and retention
-6. UI component library
+2. Deployment target and configuration
+3. Audit snapshot details and retention
+4. UI component library
