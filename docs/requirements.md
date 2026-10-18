@@ -10,7 +10,8 @@ The system must support approximately 10,000 employees across multiple countries
 
 **HR Manager**
 
-The HR Manager is responsible for maintaining employee records, managing salary changes, and understanding compensation patterns across the organization.
+- The initial release supports one HR Manager user who is responsible for maintaining employee records, managing salary changes, and analyzing compensation patterns.
+- Multi-user management and additional roles are outside the initial scope.
 
 ## 3. Problem Statement
 
@@ -27,6 +28,7 @@ The application will centralize employee and salary information, preserve histor
 - Validate required fields and prevent duplicate employee IDs.
 - Search and filter employees by relevant attributes.
 - Support pagination when browsing large employee datasets.
+- Employment status must be limited to `ACTIVE` and `INACTIVE` in the initial version.
 
 ### 4.2 Salary Management
 
@@ -34,20 +36,45 @@ The application will centralize employee and salary information, preserve histor
 - Support monthly and annual salary frequencies in the initial version.
 - Allow authorized HR users to record salary changes.
 - Preserve previous salary records instead of overwriting salary history.
-- Validate salary information before saving it.
-- Identify the salary applicable to an employee on a given date.
+- Allow authorized HR users to correct existing salary records when previously recorded information is incorrect.
+- Ensure each employee has only one salary record for a given effective date.
+- Validate salary information before saving it, including positive salary amounts, supported currencies, and valid pay frequencies.
+- Validate effective-date changes to prevent duplicate salary records for the same employee and date.
+- Identify the salary applicable to an employee on a given date using the latest effective date that is not later than the selected date.
 - Preserve the originally recorded salary amount, currency, and pay frequency.
 - Support future-dated salary changes without applying them before their effective dates.
+- Creating a salary record with a new effective date creates a new record. Correcting an existing salary record updates that record and generates an audit entry.
+- The database must enforce the unique constraint on the combination of employee ID and effective date.
+- The initial supported currencies are `INR`, `USD`, `GBP`, `EUR`, `CAD`, and `AUD`.
 
-### 4.3 Compensation Analytics
+### 4.3 Salary Audit History
 
-The application must answer common business questions, including:
+- Record an audit entry for every salary creation and update.
+- Include the action, salary values before and after the change, responsible user, timestamp, and applicable reason in each audit entry.
+- Require a reason when updating an existing salary record. A reason for initial salary creation may be optional.
+- Save salary changes and their corresponding audit entries in the same database transaction.
+- Roll back a salary change if its corresponding audit entry cannot be saved.
+- Prevent audit history from being edited or deleted through ordinary application operations.
+- The backend automatically records the configured HR Manager identity for every salary audit event. The frontend must not supply or determine the audit identity.
 
-- How many employees work in each country or department?
-- What are the average, median, minimum, and maximum salaries for a selected group?
-- Which departments have the highest average salary within a country?
-- How has compensation changed over a selected period?
-- How many employees fall within a selected salary range?
+
+### 4.4 Compensation Analytics
+
+- Compensation analytics must include active employees by default, with an option to include inactive employees.
+- The active employee headcount must always be displayed separately, regardless of the selected employment status filter.
+- Salary calculations must include only employees who have an applicable salary record for the selected reporting date and satisfy the selected employment status filter.
+- Employees without an applicable salary record must be excluded from salary calculations and counted separately. Missing salary records must not be treated as zero.
+- Salary selection must use the latest effective date that is not later than the reporting date. Future-dated salary changes must not affect earlier reporting dates.
+- Only current employment status is stored in the initial version. Historical salary reports must not imply that historical employment status is known.
+- Salary comparisons must use a consistent currency and normalized annual salary amounts.
+- Monthly salaries must be converted to annual equivalents using a factor of 12. Annual salaries remain unchanged.
+- Salaries in different currencies must not be directly compared or combined without a defined currency conversion policy.
+- Currency conversion is out of scope for the initial version.
+- Analytics must use stored employee and salary records rather than hardcoded results.
+- Each analytical query must define how employment status, missing salary records, and the reporting date affect its calculations.
+- Salary ranges must be evaluated using normalized annual salary amounts and a consistent currency.
+- Reports must make the selected currency and applicable reporting criteria explicit.
+- Active headcount represents employees whose current employment status is `ACTIVE`, regardless of whether the report includes inactive employees in its salary analysis.
 
 **Business rules:**
 
@@ -60,7 +87,7 @@ The application must answer common business questions, including:
 - Salary ranges must be evaluated using normalized annual salary amounts and a consistent currency.
 - Reports must make the selected currency and applicable reporting criteria explicit.
 
-### 4.4 Data Seeding
+### 4.5 Data Seeding
 
 - Provide a repeatable seed script that generates approximately 10,000 synthetic employee records and associated salary data.
 - Generate realistic, internally consistent data suitable for testing employee management, salary history, and analytics.
@@ -68,12 +95,15 @@ The application must answer common business questions, including:
 - Document how to run the seed script.
 - Ensure repeated execution does not unintentionally create duplicate records.
 
-### 4.5 Access Control
+### 4.6 Access Control
 
-- Restrict access to employee and salary information to authorized users.
-- Define authentication and authorization rules before exposing sensitive operations.
-- Keep credentials and sensitive configuration outside source control.
-- Enforce authorization on the backend rather than relying only on frontend visibility.
+- The initial release supports one HR Manager user.
+- Employee and salary operations must be protected against unauthorized access.
+- The authentication mechanism for the single-user application must be defined before protected operations are exposed.
+- The backend must enforce access control rather than relying only on frontend visibility.
+- The backend automatically assigns the configured HR Manager identity to salary audit events.
+- Credentials and sensitive configuration must remain outside source control.
+- Multi-user management and additional roles are out of scope for the initial release.
 
 ## 5. Non-Functional Requirements
 
@@ -149,6 +179,12 @@ The application will be considered functionally complete when:
 10. The seed script can populate the application with approximately 10,000 synthetic employees and associated salary records.
 11. Core functionality is covered by meaningful, fast, deterministic unit tests.
 12. The project includes setup, testing, seeding, and deployment documentation.
+13. Every salary creation and update generates an audit entry containing the action, relevant salary values before and after the change, responsible user, timestamp, and applicable reason.
+14. Salary changes and their corresponding audit entries are committed in the same database transaction. If audit logging fails, the salary change is rolled back.
+15. Authorized HR users can correct an existing salary record without creating duplicate records for the same employee and effective date.
+16. Compensation analytics include active employees by default, allow inactive employees to be included, and display active headcount separately.
+17. Employees without an applicable salary record are counted separately and excluded from salary calculations.
+18. Future-dated salary changes do not affect analytics for reporting dates before their effective dates.
 
 ## 8. Success Criteria
 
