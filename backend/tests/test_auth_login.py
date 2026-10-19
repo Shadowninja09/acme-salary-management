@@ -12,10 +12,12 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.auth import INVALID_CREDENTIALS_DETAIL, SESSION_COOKIE_NAME
+from app.api.deps import CSRF_FAILURE_DETAIL
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.main import app
 from app.models.user_session import UserSession
+from app.services.csrf import CSRF_COOKIE_NAME, csrf_token_is_valid
 from app.services.sessions import hash_session_token, issue_hr_manager_session
 
 _TEST_USERNAME = "hr.manager"
@@ -23,6 +25,8 @@ _TEST_PASSWORD = "test-only-login-password"
 _TEST_PASSWORD_HASH = PasswordHasher().hash(_TEST_PASSWORD)
 _PLACEHOLDER_DATABASE_URL = "postgresql+psycopg://pytest:pytest@127.0.0.1:1/acme_unused"
 _SESSION_MAX_AGE_SECONDS = 28800
+_TEST_CSRF_SECRET = "test-only-login-csrf-signing-secret"
+_TRUSTED_LOGIN_ORIGIN = "https://hr.test"
 
 
 class _IsolatedSettings(Settings):
@@ -48,6 +52,8 @@ def _login_settings(**overrides: object) -> Settings:
         "hr_manager_password_hash": _TEST_PASSWORD_HASH,
         "session_cookie_secure": False,
         "session_max_age_seconds": _SESSION_MAX_AGE_SECONDS,
+        "csrf_signing_secret": _TEST_CSRF_SECRET,
+        "csrf_trusted_origins": [_TRUSTED_LOGIN_ORIGIN],
     }
     values.update(overrides)
     return _IsolatedSettings(**values)
@@ -78,11 +84,52 @@ def _cookie_header(response) -> str:
     return response.headers.get("set-cookie", "")
 
 
-def test_valid_credentials_return_success(login_client: TestClient) -> None:
-    response = login_client.post(
+def _set_cookie_headers(response) -> list[str]:
+    headers = response.headers
+    if hasattr(headers, "get_list"):
+        values = headers.get_list("set-cookie")
+        if values:
+            return list(values)
+    if hasattr(headers, "getlist"):
+        values = headers.getlist("set-cookie")
+        if values:
+            return list(values)
+    value = headers.get("set-cookie")
+    return [value] if value else []
+
+
+def _named_cookie(response, name: str) -> str:
+    prefix = f"{name.lower()}="
+    for header in _set_cookie_headers(response):
+        if header.lower().startswith(prefix):
+            return header
+    return ""
+
+
+def _cookie_parts(header: str) -> list[str]:
+    return [part.strip() for part in header.lower().split(";")]
+
+
+def _login(
+    client: TestClient,
+    *,
+    username: str = _TEST_USERNAME,
+    password: str = _TEST_PASSWORD,
+    origin: str | None = _TRUSTED_LOGIN_ORIGIN,
+    extra_headers: dict[str, str] | None = None,
+):
+    headers = dict(extra_headers or {})
+    if origin is not None:
+        headers["Origin"] = origin
+    return client.post(
         "/api/v1/auth/login",
-        json={"username": _TEST_USERNAME, "password": _TEST_PASSWORD},
+        json={"username": username, "password": password},
+        headers=headers,
     )
+
+
+def test_valid_credentials_return_success(login_client: TestClient) -> None:
+    response = _login(login_client)
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
@@ -92,14 +139,13 @@ def test_invalid_username_returns_401(
     login_client: TestClient,
     db_session: Session,
 ) -> None:
-    response = login_client.post(
-        "/api/v1/auth/login",
-        json={"username": "other.user", "password": _TEST_PASSWORD},
-    )
+    response = _login(login_client, username="other.user")
 
     assert response.status_code == 401
     assert response.json() == {"detail": INVALID_CREDENTIALS_DETAIL}
-    assert SESSION_COOKIE_NAME not in _cookie_header(response).lower()
+    header = _cookie_header(response).lower()
+    assert SESSION_COOKIE_NAME not in header
+    assert CSRF_COOKIE_NAME not in header
     assert _session_count(db_session) == 0
 
 
@@ -107,14 +153,13 @@ def test_invalid_password_returns_401(
     login_client: TestClient,
     db_session: Session,
 ) -> None:
-    response = login_client.post(
-        "/api/v1/auth/login",
-        json={"username": _TEST_USERNAME, "password": "wrong-password"},
-    )
+    response = _login(login_client, password="wrong-password")
 
     assert response.status_code == 401
     assert response.json() == {"detail": INVALID_CREDENTIALS_DETAIL}
-    assert SESSION_COOKIE_NAME not in _cookie_header(response).lower()
+    header = _cookie_header(response).lower()
+    assert SESSION_COOKIE_NAME not in header
+    assert CSRF_COOKIE_NAME not in header
     assert _session_count(db_session) == 0
 
 
@@ -124,19 +169,21 @@ def test_successful_login_creates_one_hashed_session(
     login_settings: Settings,
 ) -> None:
     before = datetime.now(timezone.utc)
-    response = login_client.post(
-        "/api/v1/auth/login",
-        json={"username": _TEST_USERNAME, "password": _TEST_PASSWORD},
-    )
+    response = _login(login_client)
     after = datetime.now(timezone.utc)
 
     assert response.status_code == 200
     assert _session_count(db_session) == 1
 
     raw_token = response.cookies.get(SESSION_COOKIE_NAME)
+    csrf_token = response.cookies.get(CSRF_COOKIE_NAME)
     assert raw_token
+    assert csrf_token
     assert raw_token not in response.text
     assert raw_token not in str(response.json())
+    assert csrf_token not in response.text
+    assert csrf_token not in str(response.json())
+    assert login_settings.csrf_signing_secret.get_secret_value() not in response.text
 
     stored = db_session.scalar(select(UserSession))
     assert stored is not None
@@ -145,6 +192,11 @@ def test_successful_login_creates_one_hashed_session(
     assert len(stored.token_hash) == 64
     assert stored.token_hash == hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     assert stored.revoked_at is None
+    assert csrf_token_is_valid(
+        token=csrf_token,
+        session_id=stored.id,
+        secret=login_settings.csrf_signing_secret.get_secret_value(),
+    )
 
     expected_min = before + timedelta(seconds=login_settings.session_max_age_seconds)
     expected_max = after + timedelta(seconds=login_settings.session_max_age_seconds)
@@ -155,20 +207,28 @@ def test_session_cookie_attributes(
     login_client: TestClient,
     login_settings: Settings,
 ) -> None:
-    response = login_client.post(
-        "/api/v1/auth/login",
-        json={"username": _TEST_USERNAME, "password": _TEST_PASSWORD},
-    )
+    response = _login(login_client)
 
-    header = _cookie_header(response).lower()
     assert response.status_code == 200
-    assert f"{SESSION_COOKIE_NAME}=" in header
-    assert "httponly" in header
-    assert "samesite=lax" in header
-    assert "path=/" in header
-    assert f"max-age={login_settings.session_max_age_seconds}" in header
-    assert "secure" not in header.split(";")[0]
-    assert "secure" not in [part.strip() for part in header.split(";")]
+    session_header = _named_cookie(response, SESSION_COOKIE_NAME)
+    csrf_header = _named_cookie(response, CSRF_COOKIE_NAME)
+    session_parts = _cookie_parts(session_header)
+    csrf_parts = _cookie_parts(csrf_header)
+    max_age = f"max-age={login_settings.session_max_age_seconds}"
+
+    assert session_header
+    assert "httponly" in session_parts
+    assert "samesite=lax" in session_parts
+    assert "path=/" in session_parts
+    assert max_age in session_parts
+    assert "secure" not in session_parts
+
+    assert csrf_header
+    assert "httponly" not in csrf_parts
+    assert "samesite=lax" in csrf_parts
+    assert "path=/" in csrf_parts
+    assert max_age in csrf_parts
+    assert "secure" not in csrf_parts
 
 
 def test_secure_cookie_attribute_when_enabled(
@@ -178,26 +238,20 @@ def test_secure_cookie_attribute_when_enabled(
     secure_settings = _login_settings(session_cookie_secure=True)
     app.dependency_overrides[get_settings] = lambda: secure_settings
     try:
-        response = api_client.post(
-            "/api/v1/auth/login",
-            json={"username": _TEST_USERNAME, "password": _TEST_PASSWORD},
-        )
+        response = _login(api_client)
     finally:
         app.dependency_overrides.pop(get_settings, None)
 
-    header = _cookie_header(response).lower()
     assert response.status_code == 200
-    assert "secure" in [part.strip() for part in header.split(";")]
+    assert "secure" in _cookie_parts(_named_cookie(response, SESSION_COOKIE_NAME))
+    assert "secure" in _cookie_parts(_named_cookie(response, CSRF_COOKIE_NAME))
 
 
 def test_failed_authentication_creates_no_session(
     login_client: TestClient,
     db_session: Session,
 ) -> None:
-    login_client.post(
-        "/api/v1/auth/login",
-        json={"username": _TEST_USERNAME, "password": "wrong-password"},
-    )
+    _login(login_client, password="wrong-password")
     assert _session_count(db_session) == 0
 
 
@@ -232,17 +286,16 @@ def test_commit_failure_does_not_set_session_cookie(
     app.dependency_overrides[get_settings] = lambda: login_settings
     try:
         client = TestClient(app, raise_server_exceptions=False)
-        response = client.post(
-            "/api/v1/auth/login",
-            json={"username": _TEST_USERNAME, "password": _TEST_PASSWORD},
-        )
+        response = _login(client)
     finally:
         app.dependency_overrides.pop(get_settings, None)
         app.dependency_overrides.pop(get_db, None)
 
     body = response.text
     assert response.status_code == 500
-    assert SESSION_COOKIE_NAME not in _cookie_header(response).lower()
+    header = _cookie_header(response).lower()
+    assert SESSION_COOKIE_NAME not in header
+    assert CSRF_COOKIE_NAME not in header
     assert "OperationalError" not in body
     assert "commit failed" not in body
     assert "COMMIT" not in body
@@ -261,14 +314,13 @@ def test_persistence_failure_does_not_set_session_cookie(
 
     monkeypatch.setattr("app.api.auth.issue_hr_manager_session", fail_issue_session)
 
-    response = login_client.post(
-        "/api/v1/auth/login",
-        json={"username": _TEST_USERNAME, "password": _TEST_PASSWORD},
-    )
+    response = _login(login_client)
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Unable to create session"}
-    assert SESSION_COOKIE_NAME not in _cookie_header(response).lower()
+    header = _cookie_header(response).lower()
+    assert SESSION_COOKIE_NAME not in header
+    assert CSRF_COOKIE_NAME not in header
     assert _session_count(db_session) == 0
 
 
@@ -292,6 +344,8 @@ def test_session_cookie_secure_is_required() -> None:
             hr_manager_identity="audit-hr-manager",
             hr_manager_username=_TEST_USERNAME,
             hr_manager_password_hash=_TEST_PASSWORD_HASH,
+            csrf_signing_secret=_TEST_CSRF_SECRET,
+            csrf_trusted_origins=[_TRUSTED_LOGIN_ORIGIN],
         )
     except ValidationError as exc:
         assert "session_cookie_secure" in str(exc)
@@ -306,3 +360,42 @@ def test_non_positive_session_max_age_is_rejected() -> None:
         assert "session_max_age_seconds" in str(exc)
     else:
         raise AssertionError("expected Settings validation to fail")
+
+
+def test_login_without_trusted_origin_is_rejected(
+    login_client: TestClient,
+    db_session: Session,
+) -> None:
+    response = _login(login_client, origin=None)
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": CSRF_FAILURE_DETAIL}
+    header = _cookie_header(response).lower()
+    assert SESSION_COOKIE_NAME not in header
+    assert CSRF_COOKIE_NAME not in header
+    assert _session_count(db_session) == 0
+
+
+def test_login_from_untrusted_origin_is_rejected(
+    login_client: TestClient,
+    db_session: Session,
+) -> None:
+    response = _login(login_client, origin="https://evil.example")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": CSRF_FAILURE_DETAIL}
+    assert _session_count(db_session) == 0
+
+
+def test_login_accepts_trusted_referer_when_origin_is_absent(
+    login_client: TestClient,
+) -> None:
+    response = _login(
+        login_client,
+        origin=None,
+        extra_headers={"Referer": f"{_TRUSTED_LOGIN_ORIGIN}/login"},
+    )
+
+    assert response.status_code == 200
+    assert response.cookies.get(SESSION_COOKIE_NAME)
+    assert response.cookies.get(CSRF_COOKIE_NAME)

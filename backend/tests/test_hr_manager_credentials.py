@@ -33,6 +33,8 @@ def _settings(**overrides: object) -> Settings:
         "hr_manager_username": _TEST_USERNAME,
         "hr_manager_password_hash": _TEST_PASSWORD_HASH,
         "session_cookie_secure": False,
+        "csrf_signing_secret": "test-only-csrf-signing-secret-value",
+        "csrf_trusted_origins": ["https://hr.test"],
     }
     values.update(overrides)
     return _IsolatedSettings(**values)
@@ -77,6 +79,8 @@ def test_missing_username_configuration_is_rejected() -> None:
             hr_manager_identity="audit-hr-manager",
             hr_manager_password_hash=_TEST_PASSWORD_HASH,
             session_cookie_secure=False,
+            csrf_signing_secret="test-only-csrf-signing-secret-value",
+            csrf_trusted_origins=["https://hr.test"],
         )
     except ValidationError as exc:
         assert "hr_manager_username" in str(exc)

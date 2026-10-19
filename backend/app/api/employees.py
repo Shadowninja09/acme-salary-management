@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_authenticated_session
+from app.api.deps import require_authenticated_session, require_csrf_token
 from app.db.session import get_db
 from app.schemas.employee import EmployeeCreate, EmployeeList, EmployeeRead
 from app.services.employee import (
@@ -22,6 +22,7 @@ router = APIRouter(
     "",
     response_model=EmployeeRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf_token)],
 )
 def create_employee_endpoint(
     payload: EmployeeCreate,

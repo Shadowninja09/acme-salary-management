@@ -9,6 +9,11 @@ os.environ.setdefault(
 os.environ.setdefault("HR_MANAGER_IDENTITY", "hr-manager")
 os.environ.setdefault("HR_MANAGER_USERNAME", "test-hr-manager")
 os.environ.setdefault("SESSION_COOKIE_SECURE", "false")
+os.environ.setdefault(
+    "CSRF_SIGNING_SECRET",
+    "test-only-csrf-signing-secret-value",
+)
+os.environ.setdefault("CSRF_TRUSTED_ORIGINS", '["https://hr.test"]')
 
 from argon2 import PasswordHasher, extract_parameters
 from argon2.exceptions import InvalidHashError
@@ -34,8 +39,10 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.main import app
+from app.services.csrf import CSRF_COOKIE_NAME, issue_csrf_token
 from app.services.sessions import SESSION_COOKIE_NAME, issue_hr_manager_session
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -119,17 +126,54 @@ def api_client(db_session: Session) -> Generator[TestClient, None, None]:
         app.dependency_overrides.pop(get_db, None)
 
 
+class _CsrfAwareClient:
+    def __init__(self, client: TestClient, csrf_token: str) -> None:
+        self._client = client
+        self._csrf_token = csrf_token
+
+    def request(self, method: str, url: str, **kwargs):
+        if method.upper() not in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+            headers = dict(kwargs.pop("headers", None) or {})
+            headers.setdefault("X-CSRF-Token", self._csrf_token)
+            kwargs["headers"] = headers
+        return self._client.request(method, url, **kwargs)
+
+    def get(self, url: str, **kwargs):
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self.request("POST", url, **kwargs)
+
+    def put(self, url: str, **kwargs):
+        return self.request("PUT", url, **kwargs)
+
+    def patch(self, url: str, **kwargs):
+        return self.request("PATCH", url, **kwargs)
+
+    def delete(self, url: str, **kwargs):
+        return self.request("DELETE", url, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._client, name)
+
+
 @pytest.fixture
 def authenticated_client(
     api_client: TestClient,
     db_session: Session,
 ) -> Generator[TestClient, None, None]:
-    raw_token, _record = issue_hr_manager_session(
+    raw_token, record = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
     )
+    csrf_token = issue_csrf_token(
+        session_id=record.id,
+        secret=get_settings().csrf_signing_secret.get_secret_value(),
+    )
     api_client.cookies.set(SESSION_COOKIE_NAME, raw_token)
+    api_client.cookies.set(CSRF_COOKIE_NAME, csrf_token)
     try:
-        yield api_client
+        yield _CsrfAwareClient(api_client, csrf_token)
     finally:
         api_client.cookies.delete(SESSION_COOKIE_NAME)
+        api_client.cookies.delete(CSRF_COOKIE_NAME)

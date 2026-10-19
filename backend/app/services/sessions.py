@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.models.user_session import UserSession
 
+SESSION_COOKIE_NAME = "acme_session"
+
 
 class SessionAuthenticationError(Exception):
     pass
@@ -68,3 +70,16 @@ def resolve_active_session(
         raise SessionAuthenticationError
 
     return AuthenticatedSession(id=record.id, expires_at=record.expires_at)
+
+
+def revoke_user_session(
+    db: Session,
+    session_id: int,
+    *,
+    now: datetime | None = None,
+) -> None:
+    record = db.get(UserSession, session_id)
+    if record is None or record.revoked_at is not None:
+        raise SessionAuthenticationError
+    record.revoked_at = now if now is not None else datetime.now(timezone.utc)
+    db.flush()
