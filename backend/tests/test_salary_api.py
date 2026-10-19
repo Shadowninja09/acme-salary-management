@@ -372,3 +372,161 @@ def test_list_salaries_unauthenticated_returns_401(api_client: TestClient) -> No
 
     assert response.status_code == 401
     assert response.json() == {"detail": NOT_AUTHENTICATED_DETAIL}
+
+
+def test_applicable_salary_returns_latest_on_or_before_date(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    january = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    june = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json={**SALARY_PAYLOAD, "amount": "2000.00", "effective_from": "2026-06-01"},
+    )
+    assert january.status_code == 201
+    assert june.status_code == 201
+
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salaries/as-of",
+        params={"date": "2026-03-15"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == january.json()["id"]
+    assert body["employee_id"] == employee_id
+    assert body["amount"] == "1234.56"
+    assert isinstance(body["amount"], str)
+    assert body["currency"] == "INR"
+    assert body["pay_frequency"] == "MONTHLY"
+    assert body["effective_from"] == "2026-01-01"
+    assert set(body.keys()) == {
+        "id",
+        "employee_id",
+        "amount",
+        "currency",
+        "pay_frequency",
+        "effective_from",
+    }
+
+
+def test_applicable_salary_does_not_return_future_dated_record(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    january = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    future = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json={**SALARY_PAYLOAD, "amount": "3000.00", "effective_from": "2027-01-01"},
+    )
+    assert january.status_code == 201
+    assert future.status_code == 201
+
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salaries/as-of",
+        params={"date": "2026-10-19"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == january.json()["id"]
+    assert body["id"] != future.json()["id"]
+    assert body["effective_from"] == "2026-01-01"
+
+
+def test_applicable_salary_includes_record_effective_on_requested_date(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salaries/as-of",
+        params={"date": "2026-01-01"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == created.json()["id"]
+    assert response.json()["amount"] == "1234.56"
+    assert isinstance(response.json()["amount"], str)
+
+
+def test_applicable_salary_null_when_employee_has_no_records(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salaries/as-of",
+        params={"date": "2026-10-19"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_applicable_salary_null_when_only_salary_is_in_the_future(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json={**SALARY_PAYLOAD, "effective_from": "2027-01-01"},
+    )
+    assert created.status_code == 201
+
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salaries/as-of",
+        params={"date": "2026-10-19"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_applicable_salary_unknown_employee_returns_404(
+    authenticated_client: TestClient,
+) -> None:
+    response = authenticated_client.get(
+        "/api/v1/employees/999999999/salaries/as-of",
+        params={"date": "2026-10-19"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Employee not found"}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{}, {"date": "not-a-date"}, {"date": "2026-13-40"}],
+)
+def test_applicable_salary_missing_or_invalid_date_returns_422(
+    authenticated_client: TestClient,
+    params: dict,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salaries/as-of",
+        params=params,
+    )
+
+    assert response.status_code == 422
+
+
+def test_applicable_salary_unauthenticated_returns_401(api_client: TestClient) -> None:
+    response = api_client.get(
+        "/api/v1/employees/1/salaries/as-of",
+        params={"date": "2026-10-19"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": NOT_AUTHENTICATED_DETAIL}

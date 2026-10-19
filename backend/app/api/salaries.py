@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_authenticated_session, require_csrf_token
@@ -11,6 +13,7 @@ from app.services.salary import (
     InvalidSalaryAmountError,
     InvalidSalaryCurrencyError,
     create_salary,
+    get_applicable_salary,
     list_employee_salaries,
 )
 
@@ -84,3 +87,24 @@ def list_employee_salaries_endpoint(
             detail="Employee not found",
         ) from exc
     return [SalaryRead.model_validate(record) for record in records]
+
+
+@router.get(
+    "/{employee_id}/salaries/as-of",
+    response_model=SalaryRead | None,
+)
+def get_applicable_salary_endpoint(
+    employee_id: int,
+    as_of: date = Query(..., alias="date"),
+    db: Session = Depends(get_db),
+) -> SalaryRead | None:
+    try:
+        record = get_applicable_salary(db, employee_id, as_of)
+    except EmployeeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found",
+        ) from exc
+    if record is None:
+        return None
+    return SalaryRead.model_validate(record)
