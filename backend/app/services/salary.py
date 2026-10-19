@@ -161,14 +161,15 @@ def create_salary(db: Session, data: SalaryCreate) -> SalaryRecord:
 
 
 def correct_salary(
-    db: Session, salary_id: int, data: SalaryCorrection
+    db: Session, employee_id: int, salary_id: int, data: SalaryCorrection
 ) -> SalaryRecord:
+    _require_employee(db, employee_id)
     reason = _validate_correction_reason(data.reason)
     amount = _normalize_amount(data.amount)
     currency = _validate_currency(data.currency)
     pay_frequency = _validate_pay_frequency(data.pay_frequency)
     record = db.get(SalaryRecord, salary_id)
-    if record is None:
+    if record is None or record.employee_id != employee_id:
         raise SalaryNotFoundError
     old_values = _salary_snapshot(record)
     record.amount = amount

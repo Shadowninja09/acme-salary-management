@@ -5,13 +5,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_authenticated_session, require_csrf_token
 from app.db.session import get_db
-from app.schemas.salary import SalaryCreate, SalaryCreateRequest, SalaryRead
+from app.schemas.salary import SalaryCorrection, SalaryCreate, SalaryCreateRequest, SalaryRead
 from app.services.salary import (
     DuplicateSalaryEffectiveDateError,
     EmployeeNotFoundError,
     InvalidPayFrequencyError,
     InvalidSalaryAmountError,
+    InvalidSalaryCorrectionReasonError,
     InvalidSalaryCurrencyError,
+    SalaryNotFoundError,
+    correct_salary,
     create_salary,
     get_applicable_salary,
     list_employee_salaries,
@@ -25,6 +28,7 @@ router = APIRouter(
 
 DUPLICATE_EFFECTIVE_DATE_DETAIL = "Salary already exists for this effective date"
 INVALID_SALARY_AMOUNT_DETAIL = "Invalid salary amount"
+INVALID_CORRECTION_REASON_DETAIL = "Invalid correction reason"
 
 
 @router.post(
@@ -107,4 +111,49 @@ def get_applicable_salary_endpoint(
         ) from exc
     if record is None:
         return None
+    return SalaryRead.model_validate(record)
+
+
+@router.patch(
+    "/{employee_id}/salaries/{salary_id}",
+    response_model=SalaryRead,
+    dependencies=[Depends(require_csrf_token)],
+)
+def correct_salary_endpoint(
+    employee_id: int,
+    salary_id: int,
+    payload: SalaryCorrection,
+    db: Session = Depends(get_db),
+) -> SalaryRead:
+    try:
+        record = correct_salary(db, employee_id, salary_id, payload)
+    except EmployeeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found",
+        ) from exc
+    except SalaryNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Salary not found",
+        ) from exc
+    except DuplicateSalaryEffectiveDateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=DUPLICATE_EFFECTIVE_DATE_DETAIL,
+        ) from exc
+    except InvalidSalaryCorrectionReasonError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=INVALID_CORRECTION_REASON_DETAIL,
+        ) from exc
+    except (
+        InvalidSalaryAmountError,
+        InvalidSalaryCurrencyError,
+        InvalidPayFrequencyError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=INVALID_SALARY_AMOUNT_DETAIL,
+        ) from exc
     return SalaryRead.model_validate(record)

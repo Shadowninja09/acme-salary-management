@@ -53,6 +53,11 @@ class SalaryCorrection(BaseModel):
     effective_from: date
     reason: str
 
+    @field_validator("amount", mode="before")
+    @classmethod
+    def amount_must_preserve_decimal_precision(cls, value: object) -> Decimal:
+        return parse_salary_amount(value)
+
 
 class SalaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

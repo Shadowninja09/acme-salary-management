@@ -1,4 +1,6 @@
 from collections.abc import Generator
+from datetime import date
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,14 +14,18 @@ from app.db.session import get_db
 from app.main import app
 from app.models import (
     AuditAction,
+    Currency,
     Employee,
     EmploymentStatus,
+    PayFrequency,
     SalaryAuditLog,
     SalaryRecord,
 )
 from app.schemas.employee import EmployeeCreate
+from app.schemas.salary import SalaryCreate
 from app.services.csrf import CSRF_COOKIE_NAME, issue_csrf_token
 from app.services.employee import create_employee
+from app.services.salary import create_salary
 from app.services.sessions import SESSION_COOKIE_NAME, issue_hr_manager_session
 
 EMPLOYEE_PAYLOAD = {
@@ -36,6 +42,14 @@ SALARY_PAYLOAD = {
     "currency": "INR",
     "pay_frequency": "MONTHLY",
     "effective_from": "2026-01-01",
+}
+
+CORRECTION_PAYLOAD = {
+    "amount": "2000.00",
+    "currency": "USD",
+    "pay_frequency": "ANNUAL",
+    "effective_from": "2026-02-01",
+    "reason": "Corrected recorded amount",
 }
 
 
@@ -530,3 +544,322 @@ def test_applicable_salary_unauthenticated_returns_401(api_client: TestClient) -
 
     assert response.status_code == 401
     assert response.json() == {"detail": NOT_AUTHENTICATED_DETAIL}
+
+
+def test_correct_salary_updates_existing_record_and_keeps_id(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+    salary_id = created.json()["id"]
+
+    response = authenticated_client.patch(
+        f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
+        json=CORRECTION_PAYLOAD,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == salary_id
+    assert body["employee_id"] == employee_id
+    assert body["amount"] == "2000.00"
+    assert isinstance(body["amount"], str)
+    assert body["currency"] == "USD"
+    assert body["pay_frequency"] == "ANNUAL"
+    assert body["effective_from"] == "2026-02-01"
+    stored = db_session.get(SalaryRecord, salary_id)
+    assert stored is not None
+    assert stored.id == salary_id
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(SalaryRecord)
+            .where(SalaryRecord.employee_id == employee_id)
+        )
+        == 1
+    )
+
+
+def test_correct_salary_writes_update_audit(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+    salary_id = created.json()["id"]
+
+    response = authenticated_client.patch(
+        f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
+        json=CORRECTION_PAYLOAD,
+    )
+    assert response.status_code == 200
+
+    logs = list(
+        db_session.scalars(
+            select(SalaryAuditLog).where(SalaryAuditLog.salary_record_id == salary_id)
+        ).all()
+    )
+    updates = [log for log in logs if log.action == AuditAction.UPDATE.value]
+    assert len(logs) == 2
+    assert len(updates) == 1
+    log = updates[0]
+    assert log.old_values == {
+        "amount": "1234.56",
+        "currency": "INR",
+        "pay_frequency": "MONTHLY",
+        "effective_from": "2026-01-01",
+    }
+    assert log.new_values == {
+        "amount": "2000.00",
+        "currency": "USD",
+        "pay_frequency": "ANNUAL",
+        "effective_from": "2026-02-01",
+    }
+    assert log.reason == "Corrected recorded amount"
+    assert log.changed_by == get_settings().hr_manager_identity
+
+
+def test_correct_salary_unknown_salary_returns_404(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    response = authenticated_client.patch(
+        f"/api/v1/employees/{employee_id}/salaries/999999999",
+        json=CORRECTION_PAYLOAD,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Salary not found"}
+
+
+def test_correct_salary_unknown_employee_returns_404(
+    authenticated_client: TestClient,
+) -> None:
+    response = authenticated_client.patch(
+        "/api/v1/employees/999999999/salaries/1",
+        json=CORRECTION_PAYLOAD,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Employee not found"}
+
+
+def test_correct_salary_mismatch_returns_404_and_does_not_modify(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    owner_id = _create_employee(authenticated_client, employee_code="EMP-000001")
+    other_id = _create_employee(authenticated_client, employee_code="EMP-000002")
+    created = authenticated_client.post(
+        f"/api/v1/employees/{owner_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+    salary_id = created.json()["id"]
+
+    response = authenticated_client.patch(
+        f"/api/v1/employees/{other_id}/salaries/{salary_id}",
+        json=CORRECTION_PAYLOAD,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Salary not found"}
+    stored = db_session.get(SalaryRecord, salary_id)
+    assert stored is not None
+    assert stored.employee_id == owner_id
+    assert str(stored.amount) == "1234.56"
+    assert stored.effective_from.isoformat() == "2026-01-01"
+
+
+def test_correct_salary_duplicate_effective_date_returns_409(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    first = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    second = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json={**SALARY_PAYLOAD, "effective_from": "2026-03-01"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    response = authenticated_client.patch(
+        f"/api/v1/employees/{employee_id}/salaries/{first.json()['id']}",
+        json={**CORRECTION_PAYLOAD, "effective_from": "2026-03-01"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Salary already exists for this effective date"
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {**CORRECTION_PAYLOAD, "currency": "JPY"},
+        {**CORRECTION_PAYLOAD, "pay_frequency": "WEEKLY"},
+        {**CORRECTION_PAYLOAD, "amount": "0"},
+        {**CORRECTION_PAYLOAD, "amount": "-1.00"},
+        {**CORRECTION_PAYLOAD, "amount": "1.239"},
+        {**CORRECTION_PAYLOAD, "amount": 1234.56},
+        {**CORRECTION_PAYLOAD, "amount": "not-a-decimal"},
+        {**CORRECTION_PAYLOAD, "reason": ""},
+        {**CORRECTION_PAYLOAD, "reason": "   "},
+        {k: v for k, v in CORRECTION_PAYLOAD.items() if k != "reason"},
+    ],
+)
+def test_correct_salary_invalid_payload_returns_422(
+    authenticated_client: TestClient,
+    db_session: Session,
+    payload: dict,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+    salary_id = created.json()["id"]
+
+    response = authenticated_client.patch(
+        f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
+        json=payload,
+    )
+
+    assert response.status_code == 422
+    assert "IntegrityError" not in response.text
+    stored = db_session.get(SalaryRecord, salary_id)
+    assert stored is not None
+    assert str(stored.amount) == "1234.56"
+
+
+def test_unauthenticated_correct_salary_returns_401(api_client: TestClient) -> None:
+    response = api_client.patch(
+        "/api/v1/employees/1/salaries/1",
+        json=CORRECTION_PAYLOAD,
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": NOT_AUTHENTICATED_DETAIL}
+
+
+def test_missing_or_invalid_csrf_on_correct_salary_returns_403(
+    api_client: TestClient,
+    db_session: Session,
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+    path = f"/api/v1/employees/{employee_id}/salaries/{created.json()['id']}"
+
+    missing_header = api_client.patch(path, json=CORRECTION_PAYLOAD)
+    mismatched = api_client.patch(
+        path,
+        json=CORRECTION_PAYLOAD,
+        headers={"X-CSRF-Token": "v1.1.deadbeef.00"},
+    )
+
+    assert missing_header.status_code == 403
+    assert missing_header.json() == {"detail": CSRF_FAILURE_DETAIL}
+    assert mismatched.status_code == 403
+    assert mismatched.json() == {"detail": CSRF_FAILURE_DETAIL}
+    stored = db_session.get(SalaryRecord, created.json()["id"])
+    assert stored is not None
+    assert str(stored.amount) == "1234.56"
+
+
+def test_audit_failure_does_not_commit_salary_correction(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = create_employee(
+        db_session,
+        EmployeeCreate(
+            employee_code="EMP-000001",
+            full_name="Ada Lovelace",
+            country="United Kingdom",
+            department="Engineering",
+            job_title="Analyst",
+            employment_status=EmploymentStatus.ACTIVE,
+        ),
+    )
+    record = create_salary(
+        db_session,
+        SalaryCreate(
+            employee_id=employee.id,
+            amount=Decimal("1234.56"),
+            currency=Currency.INR,
+            pay_frequency=PayFrequency.MONTHLY,
+            effective_from=date(2026, 1, 1),
+        ),
+    )
+    employee_id = employee.id
+    salary_id = record.id
+    raw_token, session_record = issue_hr_manager_session(
+        db_session, lifetime_seconds=3600
+    )
+    csrf_token = issue_csrf_token(
+        session_id=session_record.id,
+        secret=get_settings().csrf_signing_secret.get_secret_value(),
+    )
+    db_session.commit()
+
+    def fail_audit(*args: object, **kwargs: object) -> None:
+        raise IntegrityError("INSERT INTO salary_audit_logs", {}, Exception())
+
+    monkeypatch.setattr("app.services.salary._write_salary_audit", fail_audit)
+
+    def override_get_db() -> Generator[Session, None, None]:
+        try:
+            yield db_session
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        client.cookies.set(SESSION_COOKIE_NAME, raw_token)
+        client.cookies.set(CSRF_COOKIE_NAME, csrf_token)
+        response = client.patch(
+            f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
+            json=CORRECTION_PAYLOAD,
+            headers={"X-CSRF-Token": csrf_token},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 500
+    assert "IntegrityError" not in response.text
+    assert "salary_audit_logs" not in response.text.lower()
+    stored = db_session.get(SalaryRecord, salary_id)
+    assert stored is not None
+    assert str(stored.amount) == "1234.56"
+    assert stored.currency == "INR"
+    assert stored.pay_frequency == "MONTHLY"
+    assert stored.effective_from.isoformat() == "2026-01-01"
+    logs = list(
+        db_session.scalars(
+            select(SalaryAuditLog).where(SalaryAuditLog.salary_record_id == salary_id)
+        ).all()
+    )
+    assert len(logs) == 1
+    assert logs[0].action == AuditAction.CREATE.value

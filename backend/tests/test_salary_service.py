@@ -161,7 +161,9 @@ def test_correct_salary_replaces_same_row(db_session: Session) -> None:
         _create_payload(employee.id, effective_from=date(2026, 3, 1)),
     )
 
-    updated = correct_salary(db_session, original.id, _correction_payload())
+    updated = correct_salary(
+        db_session, employee.id, original.id, _correction_payload()
+    )
 
     assert updated.id == original.id
     assert updated.amount == Decimal("2000.00")
@@ -182,7 +184,12 @@ def test_correct_salary_requires_non_empty_reason(
     original = create_salary(db_session, _create_payload(employee.id))
 
     with pytest.raises(InvalidSalaryCorrectionReasonError):
-        correct_salary(db_session, original.id, _correction_payload(reason=reason))
+        correct_salary(
+            db_session,
+            employee.id,
+            original.id,
+            _correction_payload(reason=reason),
+        )
 
     stored = db_session.get(SalaryRecord, original.id)
     assert stored is not None
@@ -191,8 +198,34 @@ def test_correct_salary_requires_non_empty_reason(
 
 
 def test_correct_salary_rejects_unknown_id(db_session: Session) -> None:
+    employee = _persist_employee(db_session)
     with pytest.raises(SalaryNotFoundError):
-        correct_salary(db_session, 999999999, _correction_payload())
+        correct_salary(
+            db_session, employee.id, 999999999, _correction_payload()
+        )
+
+
+def test_correct_salary_rejects_unknown_employee(db_session: Session) -> None:
+    with pytest.raises(EmployeeNotFoundError):
+        correct_salary(db_session, 999999999, 1, _correction_payload())
+
+
+def test_correct_salary_rejects_salary_owned_by_other_employee(
+    db_session: Session,
+) -> None:
+    owner = _persist_employee(db_session, employee_code="EMP-000001")
+    other = _persist_employee(db_session, employee_code="EMP-000002")
+    record = create_salary(db_session, _create_payload(owner.id))
+
+    with pytest.raises(SalaryNotFoundError):
+        correct_salary(
+            db_session, other.id, record.id, _correction_payload()
+        )
+
+    stored = db_session.get(SalaryRecord, record.id)
+    assert stored is not None
+    assert stored.amount == Decimal("1234.56")
+    assert stored.effective_from == date(2026, 1, 1)
 
 
 def test_correct_salary_rejects_duplicate_effective_date(
@@ -209,6 +242,7 @@ def test_correct_salary_rejects_duplicate_effective_date(
     with pytest.raises(DuplicateSalaryEffectiveDateError):
         correct_salary(
             db_session,
+            employee.id,
             original.id,
             _correction_payload(effective_from=date(2026, 3, 1)),
         )
@@ -223,7 +257,7 @@ def test_invalid_correction_leaves_persisted_salary_unchanged(
     object.__setattr__(payload, "amount", Decimal("1.239"))
 
     with pytest.raises(InvalidSalaryAmountError):
-        correct_salary(db_session, original.id, payload)
+        correct_salary(db_session, employee.id, original.id, payload)
 
     stored = db_session.get(SalaryRecord, original.id)
     assert stored is not None
@@ -367,7 +401,9 @@ def test_correct_salary_writes_update_audit_entry(db_session: Session) -> None:
     employee = _persist_employee(db_session)
     original = create_salary(db_session, _create_payload(employee.id))
     original_id = original.id
-    updated = correct_salary(db_session, original.id, _correction_payload())
+    updated = correct_salary(
+        db_session, employee.id, original.id, _correction_payload()
+    )
     logs = _audit_rows(db_session, original_id)
     updates = [log for log in logs if log.action == AuditAction.UPDATE.value]
 

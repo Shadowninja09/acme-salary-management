@@ -2,7 +2,7 @@
 
 Web application for ACME’s HR Manager to maintain employee and salary records and analyze how the organization pays about 10,000 people across countries.
 
-This repository is an Incubyte engineering assessment. The backend can create, fetch, and paginate employees behind session authentication; login, logout, and CSRF protection are in place. Salary creation, history, and applicable-as-of lookup are available over HTTP. Correction APIs are not. Analytics, the frontend, seeding, and deployment are not implemented yet.
+This repository is an Incubyte engineering assessment. The backend can create, fetch, and paginate employees behind session authentication; login, logout, and CSRF protection are in place. Salary creation, history, applicable-as-of lookup, and correction are available over HTTP. Analytics, the frontend, seeding, and deployment are not implemented yet.
 
 ## Requirements
 
@@ -41,13 +41,14 @@ Employee HTTP APIs require an authenticated session. Create also requires CSRF v
 - `GET /api/v1/employees/{employee_id}` — fetch by internal database id
 - `GET /api/v1/employees` — list with `limit` (default 50, max 100) and `offset` (default 0)
 
-Salary HTTP (session required; create also requires CSRF):
+Salary HTTP (session required; create and correction also require CSRF):
 
 - `POST /api/v1/employees/{employee_id}/salaries` — create a salary (`amount` as a decimal string or integer). Duplicate employee + effective date returns 409.
 - `GET /api/v1/employees/{employee_id}/salaries` — salary history for that employee, newest `effective_from` first. Empty list if the employee has no salaries.
 - `GET /api/v1/employees/{employee_id}/salaries/as-of?date=YYYY-MM-DD` — salary effective on or before that date, or `null` if none applies.
+- `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing salary (nonblank `reason` required). Updates the same row and writes an UPDATE audit entry.
 
-Correction HTTP is not implemented yet. Create/correct/applicable-salary lookup and audit logging exist in the salary service.
+Create/correct/applicable-salary lookup and audit logging exist in the salary service.
 
 ## Repository structure
 
@@ -110,9 +111,9 @@ Do not run application migrations as part of pytest setup against `acme_salary`.
 
 ## Project status
 
-**Phase:** Backend employee HTTP API, create-salary HTTP API, salary-history HTTP API, and applicable-as-of HTTP API, with session authentication and CSRF on mutations.
+**Phase:** Backend employee HTTP API and salary HTTP APIs (create, history, as-of, correction), with session authentication and CSRF on mutations.
 
-Not done: employee update/search APIs; salary correction HTTP; analytics; 10k seed; frontend; deployment; video demo.
+Not done: employee update/search APIs; analytics; 10k seed; frontend; deployment; video demo.
 
 ## Development approach
 
@@ -125,6 +126,6 @@ Not done: employee update/search APIs; salary correction HTTP; analytics; 10k se
 ## Open decisions
 
 1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`)
-2. Remaining salary HTTP contract (correction), analytics APIs, and employee search/filter
+2. Analytics APIs and employee search/filter
 3. Audit retention and administrative access policy
 4. UI component library
