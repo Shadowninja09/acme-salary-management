@@ -1,0 +1,362 @@
+.page {
+  box-sizing: border-box;
+  width: min(72rem, 100%);
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.app-header-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #14213d;
+}
+
+.app-header button {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid #c5ccd6;
+  border-radius: 6px;
+  background: #fff;
+  color: #14213d;
+  font: inherit;
+  cursor: pointer;
+}
+
+.app-header button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.login {
+  width: min(26rem, 100%);
+  margin: 3rem auto 0;
+}
+
+.login h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #14213d;
+}
+
+.login-lead {
+  margin: 0 0 1.5rem;
+  line-height: 1.55;
+  color: #3d4a5c;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.login-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #14213d;
+}
+
+.login-form input {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #c5ccd6;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-weight: 400;
+  color: #14213d;
+}
+
+.login-form button {
+  margin-top: 0.25rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #1d4ed8;
+  border-radius: 6px;
+  background: #1d4ed8;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.login-form input:focus,
+.login-form button:focus,
+.salary-form input:focus,
+.salary-form select:focus,
+.salary-form button:focus {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+.directory-header h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #14213d;
+}
+
+.directory-header p {
+  margin: 0 0 1.5rem;
+  max-width: 42rem;
+  line-height: 1.55;
+  color: #3d4a5c;
+}
+
+.directory-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.directory-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #14213d;
+}
+
+.directory-controls input,
+.directory-controls select {
+  min-width: 16rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #c5ccd6;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-weight: 400;
+  color: #14213d;
+}
+
+.directory-controls input:focus,
+.directory-controls select:focus,
+.pagination-actions button:focus,
+.row-action:focus,
+.detail-toolbar button:focus,
+.app-header button:focus {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+.directory-status {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 6px;
+  background: #eef2f7;
+  color: #3d4a5c;
+}
+
+.directory-error {
+  background: #fdecec;
+  color: #8a1f1f;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th,
+td {
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #e6ebf1;
+}
+
+th {
+  background: #f0f3f7;
+  font-weight: 600;
+  color: #14213d;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.pagination-summary {
+  margin: 0;
+  color: #3d4a5c;
+}
+
+.pagination-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.pagination-actions button {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid #c5ccd6;
+  border-radius: 6px;
+  background: #fff;
+  color: #14213d;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pagination-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.row-action,
+.detail-toolbar button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid #c5ccd6;
+  border-radius: 6px;
+  background: #fff;
+  color: #14213d;
+  font: inherit;
+  cursor: pointer;
+}
+
+.detail-toolbar {
+  margin-bottom: 1.25rem;
+}
+
+.detail-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.85rem 1.25rem;
+  margin: 0 0 1.75rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.detail-fields div {
+  margin: 0;
+}
+
+.detail-fields dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #5b6777;
+}
+
+.detail-fields dd {
+  margin: 0;
+  color: #14213d;
+}
+
+.detail-subheading {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #14213d;
+}
+
+.salary-form {
+  margin: 0 0 1.75rem;
+  padding: 1rem 1.1rem 1.15rem;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.salary-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.85rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.salary-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #14213d;
+}
+
+.salary-form input,
+.salary-form select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #c5ccd6;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-weight: 400;
+  color: #14213d;
+}
+
+.salary-form button {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid #1d4ed8;
+  border-radius: 6px;
+  background: #1d4ed8;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.salary-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .directory-controls input,
+  .directory-controls select {
+    min-width: 100%;
+  }
+
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
