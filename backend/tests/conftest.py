@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.main import app
+from app.services.sessions import SESSION_COOKIE_NAME, issue_hr_manager_session
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -116,3 +117,19 @@ def api_client(db_session: Session) -> Generator[TestClient, None, None]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def authenticated_client(
+    api_client: TestClient,
+    db_session: Session,
+) -> Generator[TestClient, None, None]:
+    raw_token, _record = issue_hr_manager_session(
+        db_session,
+        lifetime_seconds=3600,
+    )
+    api_client.cookies.set(SESSION_COOKIE_NAME, raw_token)
+    try:
+        yield api_client
+    finally:
+        api_client.cookies.delete(SESSION_COOKIE_NAME)

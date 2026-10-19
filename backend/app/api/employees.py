@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_authenticated_session
 from app.db.session import get_db
 from app.schemas.employee import EmployeeCreate, EmployeeList, EmployeeRead
 from app.services.employee import (
@@ -10,7 +11,11 @@ from app.services.employee import (
     list_employees,
 )
 
-router = APIRouter(prefix="/api/v1/employees", tags=["employees"])
+router = APIRouter(
+    prefix="/api/v1/employees",
+    tags=["employees"],
+    dependencies=[Depends(require_authenticated_session)],
+)
 
 
 @router.post(
