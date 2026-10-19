@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str
+    hr_manager_identity: str
 
     model_config = SettingsConfigDict(
         env_file=".env",

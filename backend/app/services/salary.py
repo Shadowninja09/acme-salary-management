@@ -1,10 +1,13 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
+from app.models import AuditAction, SalaryAuditLog
 from app.models.employee import Employee
 from app.models.salary import Currency, PayFrequency, SalaryRecord
 from app.schemas.salary import SalaryCorrection, SalaryCreate
@@ -100,6 +103,36 @@ def _validate_correction_reason(reason: str) -> str:
     return reason
 
 
+def _salary_snapshot(record: SalaryRecord) -> dict[str, Any]:
+    return {
+        "amount": format(record.amount, "f"),
+        "currency": record.currency,
+        "pay_frequency": record.pay_frequency,
+        "effective_from": record.effective_from.isoformat(),
+    }
+
+
+def _write_salary_audit(
+    db: Session,
+    record: SalaryRecord,
+    *,
+    action: AuditAction,
+    old_values: dict[str, Any] | None,
+    reason: str | None,
+) -> None:
+    db.add(
+        SalaryAuditLog(
+            salary_record_id=record.id,
+            action=action.value,
+            old_values=old_values,
+            new_values=_salary_snapshot(record),
+            reason=reason,
+            changed_by=get_settings().hr_manager_identity,
+        )
+    )
+    db.flush()
+
+
 def create_salary(db: Session, data: SalaryCreate) -> SalaryRecord:
     _require_employee(db, data.employee_id)
     record = SalaryRecord(
@@ -117,19 +150,27 @@ def create_salary(db: Session, data: SalaryCreate) -> SalaryRecord:
             raise DuplicateSalaryEffectiveDateError from exc
         raise
     db.refresh(record)
+    _write_salary_audit(
+        db,
+        record,
+        action=AuditAction.CREATE,
+        old_values=None,
+        reason=None,
+    )
     return record
 
 
 def correct_salary(
     db: Session, salary_id: int, data: SalaryCorrection
 ) -> SalaryRecord:
-    _validate_correction_reason(data.reason)
+    reason = _validate_correction_reason(data.reason)
     amount = _normalize_amount(data.amount)
     currency = _validate_currency(data.currency)
     pay_frequency = _validate_pay_frequency(data.pay_frequency)
     record = db.get(SalaryRecord, salary_id)
     if record is None:
         raise SalaryNotFoundError
+    old_values = _salary_snapshot(record)
     record.amount = amount
     record.currency = currency
     record.pay_frequency = pay_frequency
@@ -141,6 +182,13 @@ def correct_salary(
             raise DuplicateSalaryEffectiveDateError from exc
         raise
     db.refresh(record)
+    _write_salary_audit(
+        db,
+        record,
+        action=AuditAction.UPDATE,
+        old_values=old_values,
+        reason=reason,
+    )
     return record
 
 

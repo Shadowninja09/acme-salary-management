@@ -3,10 +3,20 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Currency, Employee, EmploymentStatus, PayFrequency, SalaryRecord
+from app.core.config import get_settings
+from app.models import (
+    AuditAction,
+    Currency,
+    Employee,
+    EmploymentStatus,
+    PayFrequency,
+    SalaryAuditLog,
+    SalaryRecord,
+)
 from app.schemas.salary import SalaryCorrection, SalaryCreate
 from app.services.salary import (
     DuplicateSalaryEffectiveDateError,
@@ -287,3 +297,96 @@ def test_unrelated_integrity_error_is_not_mapped_to_duplicate(
 
     with pytest.raises(IntegrityError):
         create_salary(db_session, _create_payload(employee.id))
+
+
+def _audit_rows(db_session: Session, salary_id: int) -> list[SalaryAuditLog]:
+    return list(
+        db_session.scalars(
+            select(SalaryAuditLog)
+            .where(SalaryAuditLog.salary_record_id == salary_id)
+            .order_by(SalaryAuditLog.id.asc())
+        ).all()
+    )
+
+
+def test_create_salary_writes_create_audit_entry(db_session: Session) -> None:
+    employee = _persist_employee(db_session)
+    record = create_salary(db_session, _create_payload(employee.id))
+    logs = _audit_rows(db_session, record.id)
+
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.action == AuditAction.CREATE.value
+    assert log.old_values is None
+    assert log.new_values == {
+        "amount": "1234.56",
+        "currency": Currency.INR.value,
+        "pay_frequency": PayFrequency.MONTHLY.value,
+        "effective_from": "2026-01-01",
+    }
+    assert log.reason is None
+    assert log.changed_by == get_settings().hr_manager_identity
+    assert log.salary_record_id == record.id
+
+
+def test_correct_salary_writes_update_audit_entry(db_session: Session) -> None:
+    employee = _persist_employee(db_session)
+    original = create_salary(db_session, _create_payload(employee.id))
+    original_id = original.id
+    updated = correct_salary(db_session, original.id, _correction_payload())
+    logs = _audit_rows(db_session, original_id)
+    updates = [log for log in logs if log.action == AuditAction.UPDATE.value]
+
+    assert updated.id == original_id
+    assert db_session.scalar(select(func.count()).select_from(SalaryRecord)) == 1
+    assert len(logs) == 2
+    assert len(updates) == 1
+    log = updates[0]
+    assert log.old_values == {
+        "amount": "1234.56",
+        "currency": Currency.INR.value,
+        "pay_frequency": PayFrequency.MONTHLY.value,
+        "effective_from": "2026-01-01",
+    }
+    assert log.new_values == {
+        "amount": "2000.00",
+        "currency": Currency.USD.value,
+        "pay_frequency": PayFrequency.ANNUAL.value,
+        "effective_from": "2026-02-01",
+    }
+    assert log.reason == "Corrected recorded amount"
+    assert log.changed_by == get_settings().hr_manager_identity
+
+
+def test_audit_flush_failure_does_not_leave_committed_salary(
+    db_session: Session,
+) -> None:
+    employee = _persist_employee(db_session)
+    real_flush = db_session.flush
+    flush_calls = {"count": 0}
+
+    def flush_then_fail_audit(*args: object, **kwargs: object) -> None:
+        flush_calls["count"] += 1
+        if flush_calls["count"] == 1:
+            real_flush(*args, **kwargs)
+            return
+        raise IntegrityError("INSERT", {}, Exception("audit flush failed"))
+
+    db_session.flush = flush_then_fail_audit  # type: ignore[method-assign]
+    try:
+        with pytest.raises(IntegrityError):
+            create_salary(db_session, _create_payload(employee.id))
+    finally:
+        db_session.flush = real_flush  # type: ignore[method-assign]
+
+    db_session.rollback()
+
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(SalaryRecord)
+            .where(SalaryRecord.employee_id == employee.id)
+        )
+        == 0
+    )
+    assert db_session.scalar(select(func.count()).select_from(SalaryAuditLog)) == 0
