@@ -1,0 +1,33 @@
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy.orm import Session
+
+from app.models.user_session import UserSession
+
+
+def generate_session_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_session_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def issue_hr_manager_session(
+    db: Session,
+    *,
+    lifetime_seconds: int,
+    now: datetime | None = None,
+) -> tuple[str, UserSession]:
+    issued_at = now if now is not None else datetime.now(timezone.utc)
+    raw_token = generate_session_token()
+    record = UserSession(
+        token_hash=hash_session_token(raw_token),
+        expires_at=issued_at + timedelta(seconds=lifetime_seconds),
+    )
+    db.add(record)
+    db.flush()
+    db.refresh(record)
+    return raw_token, record

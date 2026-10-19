@@ -6,6 +6,25 @@ os.environ.setdefault(
     "DATABASE_URL",
     "postgresql+psycopg://pytest:pytest@127.0.0.1:1/acme_unused",
 )
+os.environ.setdefault("HR_MANAGER_IDENTITY", "hr-manager")
+os.environ.setdefault("HR_MANAGER_USERNAME", "test-hr-manager")
+os.environ.setdefault("SESSION_COOKIE_SECURE", "false")
+
+from argon2 import PasswordHasher, extract_parameters
+from argon2.exceptions import InvalidHashError
+
+_configured_password_hash = os.environ.get("HR_MANAGER_PASSWORD_HASH", "").strip()
+_configured_hash_is_valid = False
+if _configured_password_hash:
+    try:
+        extract_parameters(_configured_password_hash)
+        _configured_hash_is_valid = True
+    except InvalidHashError:
+        _configured_hash_is_valid = False
+if not _configured_hash_is_valid:
+    os.environ["HR_MANAGER_PASSWORD_HASH"] = PasswordHasher().hash(
+        "test-only-unused-password"
+    )
 
 import pytest
 from alembic import command
