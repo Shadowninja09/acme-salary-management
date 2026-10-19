@@ -19,3 +19,11 @@ export type SalaryCreateRequest = {
   pay_frequency: PayFrequency
   effective_from: string
 }
+
+export type SalaryCorrectionRequest = {
+  amount: string
+  currency: SalaryCurrency
+  pay_frequency: PayFrequency
+  effective_from: string
+  reason: string
+}

@@ -63,7 +63,7 @@ async function parseErrorMessage(response: Response, fallback: string): Promise<
 }
 
 type RequestOptions = {
-  method: 'GET' | 'POST'
+  method: 'GET' | 'POST' | 'PATCH'
   query?: Record<string, string>
   json?: unknown
   signal?: AbortSignal
@@ -79,7 +79,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions): Prom
     headers['Content-Type'] = 'application/json'
   }
   if (
-    options.method === 'POST' &&
+    (options.method === 'POST' || options.method === 'PATCH') &&
     path !== LOGIN_PATH &&
     !headerIsPresent(headers, CSRF_HEADER_NAME)
   ) {
@@ -146,4 +146,8 @@ export function apiGet<T>(
 
 export function apiPost<T>(path: string, json: unknown, signal?: AbortSignal): Promise<T> {
   return apiRequest<T>(path, { method: 'POST', json, signal })
+}
+
+export function apiPatch<T>(path: string, json: unknown, signal?: AbortSignal): Promise<T> {
+  return apiRequest<T>(path, { method: 'PATCH', json, signal })
 }

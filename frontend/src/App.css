@@ -101,6 +101,7 @@
 .login-form button:focus,
 .salary-form input:focus,
 .salary-form select:focus,
+.salary-form textarea:focus,
 .salary-form button:focus {
   outline: 2px solid #1d4ed8;
   outline-offset: 2px;
@@ -311,7 +312,8 @@ tbody tr:last-child td {
 }
 
 .salary-form input,
-.salary-form select {
+.salary-form select,
+.salary-form textarea {
   padding: 0.5rem 0.65rem;
   border: 1px solid #c5ccd6;
   border-radius: 6px;
@@ -319,6 +321,22 @@ tbody tr:last-child td {
   font: inherit;
   font-weight: 400;
   color: #14213d;
+}
+
+.salary-form textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.salary-form-reason {
+  grid-column: 1 / -1;
+}
+
+.salary-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .salary-form button {

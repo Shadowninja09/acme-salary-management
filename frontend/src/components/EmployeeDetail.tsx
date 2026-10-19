@@ -3,6 +3,7 @@ import { ApiError } from '../api/client'
 import { getEmployee } from '../api/employees'
 import { listEmployeeSalaries } from '../api/salaries'
 import { AddSalaryForm } from './AddSalaryForm'
+import { CorrectSalaryForm } from './CorrectSalaryForm'
 import type { Employee } from '../types/employee'
 import type { PayFrequency, Salary } from '../types/salary'
 
@@ -18,6 +19,7 @@ function formatPayFrequency(frequency: PayFrequency): string {
 export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [salaries, setSalaries] = useState<Salary[] | null>(null)
+  const [selectedSalaryId, setSelectedSalaryId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ApiError | null>(null)
 
@@ -38,6 +40,7 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
         if (!cancelled) {
           setEmployee(profile)
           setSalaries(history)
+          setSelectedSalaryId(null)
         }
       } catch (cause) {
         if (cancelled || (cause instanceof DOMException && cause.name === 'AbortError')) {
@@ -61,7 +64,15 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
   async function refreshHistory() {
     const history = await listEmployeeSalaries(employeeId)
     setSalaries(history)
+    setSelectedSalaryId((currentId) =>
+      currentId !== null && history.some((salary) => salary.id === currentId)
+        ? currentId
+        : null,
+    )
   }
+
+  const selectedSalary =
+    salaries?.find((salary) => salary.id === selectedSalaryId) ?? null
 
   return (
     <section className="detail" aria-labelledby="detail-heading">
@@ -114,6 +125,16 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
 
           <AddSalaryForm employeeId={employee.id} onCreated={refreshHistory} />
 
+          {selectedSalary ? (
+            <CorrectSalaryForm
+              key={selectedSalary.id}
+              employeeId={employee.id}
+              salary={selectedSalary}
+              onCorrected={refreshHistory}
+              onCancel={() => setSelectedSalaryId(null)}
+            />
+          ) : null}
+
           <h2 className="detail-subheading">Salary history</h2>
           {salaries && salaries.length === 0 ? (
             <p className="directory-status" role="status">
@@ -132,6 +153,7 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
                     <th scope="col">Amount</th>
                     <th scope="col">Currency</th>
                     <th scope="col">Pay frequency</th>
+                    <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -141,6 +163,16 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
                       <td>{salary.amount}</td>
                       <td>{salary.currency}</td>
                       <td>{formatPayFrequency(salary.pay_frequency)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="row-action"
+                          onClick={() => setSelectedSalaryId(salary.id)}
+                          aria-pressed={selectedSalaryId === salary.id}
+                        >
+                          Correct
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
