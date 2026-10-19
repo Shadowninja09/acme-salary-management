@@ -10,11 +10,12 @@ The database design prioritizes data integrity, historical accuracy, auditabilit
 
 ### Core Tables
 
-The database contains three core tables:
+The database currently contains four tables (Alembic revisions `0001`–`0004`):
 
 1. `employees` — stores employee information and current employment status.
 2. `salary_records` — stores salary amounts, currencies, pay frequencies, and effective dates.
 3. `salary_audit_logs` — records salary creation and update events.
+4. `user_sessions` — stores hashed opaque session tokens for the configured HR Manager.
 
 ## 2. Entity Relationships
 
@@ -27,6 +28,7 @@ Relationships:
 
 - `salary_records.employee_id` references `employees.id`.
 - `salary_audit_logs.salary_record_id` references `salary_records.id`.
+- `user_sessions` has no foreign key to a users table. The application authenticates a single configured HR Manager; session rows are not linked to a user record.
 
 ## 3. Employees Table
 
@@ -124,13 +126,13 @@ Stores the history of salary creation and update operations.
 
 ### Audit Identity
 
-The initial release supports one configured HR Manager identity.
+The initial release supports one configured HR Manager identity (`HR_MANAGER_IDENTITY`).
 
-- The backend automatically assigns the configured identity to each audit event.
-- The frontend must not be responsible for supplying the audit identity.
+- The backend automatically assigns that configured identity to each audit event (`changed_by`).
+- The frontend must not supply the audit identity.
 - A separate `users` table is not included in the initial database schema.
-- `changed_by` records the configured identity; it does not independently verify who performed the action.
-- Verified authentication can be introduced in a future version.
+- Authentication exists as database-backed sessions for the configured login username. `changed_by` is still the configured audit identity, not a value loaded from an authenticated user row.
+- Session authentication proves that a valid HR Manager session performed the request. It does not replace the configured audit identity field.
 
 ### Audit Snapshot
 
@@ -156,8 +158,30 @@ For an `UPDATE` event, `old_values` contains the values before the change, and `
 - If audit creation fails, the salary change must be rolled back.
 - Ordinary application operations must not allow audit entries to be edited or deleted.
 - Foreign-key and deletion behavior must preserve audit history.
+- There is no database privilege or trigger that makes `salary_audit_logs` immutable. Preservation is an application rule plus `ON DELETE RESTRICT` on the salary-record foreign key.
 
-## 6. Relationships and Deletion Policy
+## 6. User Sessions Table
+
+**Table name:** `user_sessions`
+
+Stores hashed session tokens for the configured HR Manager. Implemented in migration `0004_create_user_sessions`.
+
+| Column | PostgreSQL Type | Constraints |
+|---|---|---|
+| `id` | `BIGINT` | Primary key, generated automatically (`IDENTITY`) |
+| `token_hash` | `VARCHAR(64)` | Unique, not null (SHA-256 hex digest of the raw token) |
+| `created_at` | `TIMESTAMPTZ` | Not null, server default `now()` |
+| `expires_at` | `TIMESTAMPTZ` | Not null |
+| `revoked_at` | `TIMESTAMPTZ` | Nullable; set when the session is revoked |
+
+### Session rules
+
+- The raw session token is issued to the browser as the HttpOnly `acme_session` cookie. Only `token_hash` is persisted.
+- A session is usable only when `revoked_at` is null and `expires_at` is still in the future.
+- Logout sets `revoked_at`. It does not delete the row.
+- CSRF tokens are not stored in this table. They are signed cookies bound to `user_sessions.id`.
+
+## 7. Relationships and Deletion Policy
 
 | Relationship | Rule |
 |---|---|
@@ -168,9 +192,11 @@ For an `UPDATE` event, `old_values` contains the values before the change, and `
 | Audit log modification | Not allowed through ordinary application operations |
 | Audit log deletion | Not allowed through ordinary application operations |
 
-Foreign keys must not use cascading deletion in a way that removes salary or audit history.
+Foreign keys use `ON DELETE RESTRICT` (`fk_salary_records_employee_id`, `fk_salary_audit_logs_salary_record_id`). They must not use cascading deletion in a way that removes salary or audit history.
 
-## 7. Compensation Analytics Rules
+## 8. Compensation Analytics Rules
+
+The following reporting rules are intended for compensation analytics. There is no analytics query API yet. Salary applicability is implemented in the salary service (`get_applicable_salary`).
 
 The database supports the following reporting rules:
 
@@ -186,21 +212,22 @@ The database supports the following reporting rules:
 - Future-dated salary changes must not affect earlier reports.
 - Historical employment status cannot be reconstructed because only the current employment status is stored.
 
-## 8. Indexes and Query Performance
+## 9. Indexes and Query Performance
 
-The following indexes are planned:
+The following indexes exist in the current migrations (unique constraints create unique indexes in PostgreSQL):
 
-- Unique index on `employees.employee_code`.
-- Unique composite index on `salary_records(employee_id, effective_from)`.
-- Index on `salary_audit_logs.salary_record_id` to retrieve salary history efficiently.
+- Unique constraint `uq_employees_employee_code` on `employees.employee_code`.
+- Unique constraint `uq_salary_records_employee_id_effective_from` on `salary_records(employee_id, effective_from)`.
+- Unique constraint `uq_user_sessions_token_hash` on `user_sessions.token_hash`.
+- Index `ix_salary_audit_logs_salary_record_id` on `salary_audit_logs.salary_record_id`.
 
-Additional indexes should be introduced based on actual query patterns and query-plan analysis rather than added without a demonstrated need.
+No additional search or analytics indexes have been added. Further indexes should follow actual query patterns and query-plan analysis.
 
-The initial database is designed for approximately 10,000 employees. Performance must be verified with realistic seeded data and representative queries.
+The initial database is designed for approximately 10,000 employees. Performance has not been measured against a seeded dataset.
 
-## 9. Data Seeding
+## 10. Data Seeding
 
-A repeatable seed script will generate approximately 10,000 synthetic employee records and associated salary records.
+A repeatable seed script is still planned. It is not in the repository yet. When added, it will generate approximately 10,000 synthetic employee records and associated salary records.
 
 Requirements:
 
@@ -210,16 +237,23 @@ Requirements:
 - Generate valid employee, salary, currency, frequency, and effective-date values.
 - Ensure seeded data supports testing of active and inactive employees, salary history, future-dated changes, and missing salary information.
 
-## 10. Database Migrations
+## 11. Database Migrations
 
-Alembic will manage database schema changes.
+Alembic manages database schema changes. Current revisions:
 
-- Schema changes must be version-controlled through migrations.
+| Revision | Table |
+|---|---|
+| `0001_create_employees` | `employees` |
+| `0002_create_salary_records` | `salary_records` |
+| `0003_create_salary_audit_logs` | `salary_audit_logs` |
+| `0004_create_user_sessions` | `user_sessions` |
+
+- Schema changes must remain version-controlled through migrations.
 - Migrations must be reviewable and reproducible.
 - The application must not depend on manually created production schema changes.
 - Database initialization and migration instructions must be documented.
 
-## 11. Database Testing
+## 12. Database Testing
 
 Database-related tests must cover:
 
@@ -233,16 +267,18 @@ Database-related tests must cover:
 - Required update reasons.
 - Transaction rollback when audit creation fails.
 - Preservation of salary and audit history.
-- Safe, repeatable seed-script execution.
-- Compensation analytics for missing salaries, employment status, frequency, and currencies.
+- Safe, repeatable seed-script execution (pending; the script does not exist yet).
+- Compensation analytics for missing salaries, employment status, frequency, and currencies (pending HTTP/analytics implementation).
+- Session token hashing (raw token not persisted), expiry, and revocation.
+- CSRF binding to the authenticated session.
 
-Tests must be deterministic and use an isolated test database or an appropriately isolated database transaction strategy.
+Tests must be deterministic. Persistence tests use `TEST_DATABASE_URL` (dedicated `acme_test` database) and wrap each test in a connection-level transaction with savepoints so commits do not leak into other tests. Application `get_db` commits after a successful request. Login and logout use function-scoped sessions so the session row is committed before cookies are set or cleared.
 
-## 12. Initial Scope and Future Extensions
+## 13. Initial Scope and Future Extensions
 
 The initial schema intentionally avoids unnecessary complexity:
 
-- No separate users table.
+- No separate users table (sessions are not tied to a user row).
 - No role-management system.
 - No country, department, or job-title lookup tables.
 - No currency conversion tables.
@@ -251,13 +287,16 @@ The initial schema intentionally avoids unnecessary complexity:
 
 These can be introduced through future migrations if business requirements change.
 
-## 13. Open Decisions
+## 14. Open Decisions
 
-The following details must be finalized before the relevant implementation begins:
+Settled by the current implementation:
 
-1. Exact authentication approach for the single HR Manager.
-2. Database transaction and test-database strategy.
-3. API contracts, filtering, and pagination conventions.
-4. Deployment and configuration strategy.
-5. Audit retention and administrative access policy.
-6. Whether future releases need additional pay frequencies, currency conversion, or bulk salary operations.
+- Single HR Manager authentication via opaque hashed sessions, cookies, CSRF, and trusted-origin login checks.
+- Persistence tests against `TEST_DATABASE_URL`; request-scoped commit in `get_db`.
+
+Still open:
+
+1. Salary and analytics HTTP API contracts, employee search/filter conventions, and remaining pagination details beyond the current employee `limit`/`offset` list.
+2. Deployment target and production configuration (HTTPS, `SESSION_COOKIE_SECURE`, real trusted origins).
+3. Audit retention and administrative access policy.
+4. Whether future releases need additional pay frequencies, currency conversion, or bulk salary operations.

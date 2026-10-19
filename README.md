@@ -2,7 +2,7 @@
 
 Web application for ACME’s HR Manager to maintain employee and salary records and analyze how the organization pays about 10,000 people across countries.
 
-This repository is an Incubyte engineering assessment. The backend can create, fetch, and paginate employees. Salary workflows, authentication, the frontend, seeding, and deployment are not implemented yet.
+This repository is an Incubyte engineering assessment. The backend can create, fetch, and paginate employees behind session authentication; login, logout, and CSRF protection are in place. Salary persistence and audit logging exist as services, not HTTP APIs. Analytics, the frontend, seeding, and deployment are not implemented yet.
 
 ## Requirements
 
@@ -26,10 +26,22 @@ Backend Python packages are listed in `requirements.txt`.
 
 ## Current backend capabilities
 
+Public:
+
 - `GET /health` — liveness check; does not use the database
+
+Authentication (configured HR Manager; secrets live in `.env`, not in git):
+
+- `POST /api/v1/auth/login` — trusted-origin check, then credentials. On success, sets HttpOnly `acme_session` and a session-bound `acme_csrf` cookie (not HttpOnly)
+- `POST /api/v1/auth/logout` — requires a valid session and CSRF token (`acme_csrf` cookie plus `X-CSRF-Token` header); revokes the session and clears both cookies
+
+Employee HTTP APIs require an authenticated session. Create also requires CSRF validation:
+
 - `POST /api/v1/employees` — create an employee (duplicate `employee_code` returns 409)
 - `GET /api/v1/employees/{employee_id}` — fetch by internal database id
 - `GET /api/v1/employees` — list with `limit` (default 50, max 100) and `offset` (default 0)
+
+Salary create/correct, applicable-salary lookup, and audit logging are implemented in the salary service layer. There are no salary HTTP endpoints yet.
 
 ## Repository structure
 
@@ -65,7 +77,7 @@ There is no `frontend/` package yet.
   - `acme_salary` — application data
   - `acme_test` — automated tests only
 
-Copy `.env.example` to `.env` and replace the placeholders. Do not commit `.env`.
+Copy `.env.example` to `.env` and replace the placeholders (database URLs, HR Manager username and password hash, session cookie settings, CSRF signing secret, and trusted login origins). Do not commit `.env`.
 
 ```text
 DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_salary
@@ -92,9 +104,9 @@ Do not run application migrations as part of pytest setup against `acme_salary`.
 
 ## Project status
 
-**Phase:** Backend employee persistence and HTTP API.
+**Phase:** Backend employee HTTP API with session authentication and CSRF; salary persistence and audit services without HTTP routes.
 
-Not done: authentication, salary records, analytics, 10k seed, frontend, deployment, video demo.
+Not done: employee update/search APIs, salary HTTP API, analytics, 10k seed, frontend, deployment, video demo.
 
 ## Development approach
 
@@ -106,7 +118,7 @@ Not done: authentication, salary records, analytics, 10k seed, frontend, deploym
 
 ## Open decisions
 
-1. Authentication for the single HR Manager
-2. Deployment target and configuration
-3. Audit snapshot details and retention
+1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`)
+2. Salary and analytics HTTP API contracts; employee search/filter
+3. Audit retention and administrative access policy
 4. UI component library

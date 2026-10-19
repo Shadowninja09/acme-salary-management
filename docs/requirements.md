@@ -76,17 +76,6 @@ The application will centralize employee and salary information, preserve histor
 - Reports must make the selected currency and applicable reporting criteria explicit.
 - Active headcount represents employees whose current employment status is `ACTIVE`, regardless of whether the report includes inactive employees in its salary analysis.
 
-**Business rules:**
-
-- Salary comparisons must use a consistent currency and normalized annual salary amounts.
-- Monthly salaries must be converted to annual equivalents using a factor of 12. Annual salaries remain unchanged.
-- Salaries in different currencies must not be directly compared or combined without a defined currency conversion policy.
-- Currency conversion is out of scope for the initial version.
-- Analytics must use stored employee and salary records rather than hardcoded results.
-- Each analytical query must define how employment status, missing salary records, and the reporting date affect its calculations.
-- Salary ranges must be evaluated using normalized annual salary amounts and a consistent currency.
-- Reports must make the selected currency and applicable reporting criteria explicit.
-
 ### 4.5 Data Seeding
 
 - Provide a repeatable seed script that generates approximately 10,000 synthetic employee records and associated salary data.
@@ -97,12 +86,15 @@ The application will centralize employee and salary information, preserve histor
 
 ### 4.6 Access Control
 
-- The initial release supports one HR Manager user.
+- The initial release supports one configured HR Manager.
 - Employee and salary operations must be protected against unauthorized access.
-- The authentication mechanism for the single-user application must be defined before protected operations are exposed.
 - The backend must enforce access control rather than relying only on frontend visibility.
-- The backend automatically assigns the configured HR Manager identity to salary audit events.
-- Credentials and sensitive configuration must remain outside source control.
+- Authentication is session-based. The HR Manager signs in with a configured username and password. The backend issues an opaque session token and persists only the SHA-256 hash of that token. The raw token is not stored.
+- Sessions expire after a configured lifetime and can be revoked on logout. Expired or revoked sessions must not authorize further requests.
+- The session cookie is HttpOnly. State-changing browser requests must also present a valid CSRF token bound to the authenticated session (cookie plus matching request header). CSRF protection does not replace authentication.
+- Login has no session yet, so login requests must come from a configured trusted origin (`Origin`, or `Referer` only when `Origin` is absent). Arbitrary origins must not be trusted.
+- Passwords are stored only as Argon2 encoded hashes. Session signing material, CSRF signing secrets, trusted origins, and other sensitive configuration must remain outside source control.
+- The backend automatically assigns the configured HR Manager identity (`HR_MANAGER_IDENTITY`) to salary audit events. That identity is audit attribution. It is distinct from the login username and is not independently derived from an authenticated user row.
 - Multi-user management and additional roles are out of scope for the initial release.
 
 ## 5. Non-Functional Requirements
@@ -137,7 +129,7 @@ The application will centralize employee and salary information, preserve histor
 
 - Employee and salary information must be accessible only to authorized users.
 - Sensitive configuration and credentials must not be committed to source control.
-- The backend must enforce access control for protected operations.
+- The backend must enforce session authentication for protected operations and CSRF validation for authenticated state-changing browser requests.
 
 ### 5.6 Documentation
 
@@ -185,9 +177,36 @@ The application will be considered functionally complete when:
 16. Compensation analytics include active employees by default, allow inactive employees to be included, and display active headcount separately.
 17. Employees without an applicable salary record are counted separately and excluded from salary calculations.
 18. Future-dated salary changes do not affect analytics for reporting dates before their effective dates.
+19. Only an authenticated HR Manager session can access protected employee and salary operations.
+20. Login issues a session cookie and a session-bound CSRF cookie only after trusted-origin checks and successful credential verification. Logout requires a valid session and CSRF token, revokes the current session, and clears both cookies.
+21. Credentials, the CSRF signing secret, and trusted origins are supplied through configuration rather than committed source.
+
+These criteria describe the intended complete deliverable. Authentication, session persistence, CSRF protection, employee HTTP APIs, and salary persistence/services exist today; several criteria above are still pending (see section 9).
 
 ## 8. Success Criteria
 
 The HR Manager can securely manage employee and salary information in one application, review historical compensation changes, and answer common organizational compensation questions without relying on manually maintained spreadsheets.
 
 The solution must remain understandable, testable, and maintainable as the dataset and business requirements grow.
+
+## 9. Current implementation status
+
+This section records progress against the requirements above. It does not replace those requirements.
+
+**Implemented**
+
+- Employee persistence and HTTP APIs to create, fetch by id, and list employees with pagination (`limit`/`offset`). Protected by session authentication. Create also requires CSRF validation.
+- Salary persistence, create/correct services, applicable-salary lookup, and audit logging in the same database transaction as the salary change. There is no salary HTTP API yet.
+- One configured HR Manager: login and logout, opaque `acme_session` cookie (HttpOnly, SameSite=Lax, configured Secure and max-age), SHA-256 hashed sessions in `user_sessions`, expiry and revocation.
+- Session-bound CSRF cookie `acme_csrf` (readable by a future frontend) plus `X-CSRF-Token` header on state-changing authenticated requests. Trusted-origin validation on login.
+- Health check `GET /health` remains public.
+- Backend tests against a dedicated `TEST_DATABASE_URL` database, isolated with savepoints.
+
+**Not yet implemented**
+
+- Employee update, search, and filter APIs.
+- Salary HTTP endpoints and frontend salary workflows.
+- Compensation analytics APIs and UI.
+- Repeatable ~10,000-employee seed script.
+- React frontend and frontend tests.
+- Deployment documentation beyond repository setup notes.

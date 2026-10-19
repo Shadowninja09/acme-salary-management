@@ -10,7 +10,7 @@ Build a web application so ACME’s HR Manager can manage employee and salary da
 
 The first release is a fully functional backend and UI for **one HR Manager**. It covers employee records, salary history, compensation analytics from stored data, a repeatable synthetic seed of about 10,000 employees, automated tests for core behavior, and a deployed demonstration.
 
-Multi-user administration and extra roles are out of scope.
+Access is backend-enforced session authentication for that single HR Manager, with CSRF protection on state-changing browser requests. The configured audit identity recorded on salary changes is not the same thing as the login username. Multi-user administration and extra roles are out of scope.
 
 ## Key features
 
@@ -19,6 +19,8 @@ Multi-user administration and extra roles are out of scope.
 - Resolve the salary that applies on a chosen date. Future-dated changes do not apply early.
 - Analyze compensation from persisted records: consistent currency, monthly amounts annualized by ×12, active employees by default, missing salaries counted separately (not treated as zero).
 - Seed about 10,000 synthetic employees and related salaries without using real personal data.
+
+This brief describes the intended first release. Current progress (what exists in the repository versus what is still pending) is recorded in [`requirements.md`](requirements.md) section 9.
 
 ## Deliberate exclusions
 

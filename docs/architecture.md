@@ -8,14 +8,14 @@ The application will allow ACME's HR Manager to manage employee information, mai
 
 The architecture prioritizes maintainability, testability, data integrity, auditability, and clear separation of responsibilities.
 
-The initial release supports one configured HR Manager identity. Multi-user management and additional roles are outside the initial scope.
+The initial release supports one configured HR Manager. The backend authenticates that user with a database-backed session. Multi-user management and additional roles are outside the initial scope.
 
 ## 2. Technology Stack
 
 | Component | Technology | Responsibility |
 |---|---|---|
-| Frontend | React | User interface and interactions |
-| Frontend build tool | Vite | Frontend development and production builds |
+| Frontend | React (planned; not in the repository) | User interface and interactions |
+| Frontend build tool | Vite (planned) | Frontend development and production builds |
 | Backend API | FastAPI | HTTP endpoints and request handling |
 | Request/response validation | Pydantic | Validate API inputs and outputs |
 | ORM | SQLAlchemy | Database access and object-relational mapping |
@@ -28,7 +28,7 @@ The initial release supports one configured HR Manager identity. Multi-user mana
 
 ## 3. High-Level Architecture
 
-The application will follow a client-server architecture.
+The application follows a client-server architecture. The FastAPI backend and PostgreSQL schema are in the repository. The React frontend is still planned.
 
 ```text
 +----------------------------------+
@@ -58,6 +58,7 @@ The application will follow a client-server architecture.
 | Employees                        |
 | Salary Records                   |
 | Salary Audit Logs                |
+| User Sessions                    |
 +----------------------------------+
 ```
 
@@ -77,7 +78,7 @@ Responsibilities:
 - Accept requests and validate request data.
 - Invoke the appropriate business services.
 - Return structured responses and appropriate HTTP status codes.
-- Apply the access restrictions defined for the initial single-user application.
+- Apply session authentication and, for state-changing authenticated routes, CSRF validation.
 
 API routes must not contain complex salary calculations or database business rules.
 
@@ -103,8 +104,9 @@ Responsibilities:
 - Perform database queries using SQLAlchemy.
 - Create, retrieve, and update persisted records.
 - Support filtering, pagination, and analytics queries.
-- Apply database transactions where required.
-- Keep database access details separate from business services where practical.
+- Apply database transactions where required. `get_db` commits after a successful request and rolls back on error.
+- Services currently issue SQLAlchemy queries directly. There is no separate `repositories` package.
+- Keep database access details out of HTTP handlers where practical.
 
 ### 4.4 Schema Layer
 
@@ -114,7 +116,7 @@ Responsibilities:
 
 ## 5. Frontend Architecture
 
-The React application will be organized around the main user workflows:
+The React application is not in the repository yet. When added, it will be organized around the main user workflows:
 
 - Employee management.
 - Salary management and history.
@@ -135,7 +137,7 @@ Frontend validation improves usability but does not replace backend validation o
 
 ## 6. Initial Domain Model
 
-- The initial domain model contains three entities: `Employee`, `SalaryRecord`, and `SalaryAuditLog`.
+- The persisted domain model contains four entities: `Employee`, `SalaryRecord`, `SalaryAuditLog`, and `UserSession`.
 
 ### 6.1 Employee
 
@@ -204,12 +206,26 @@ The initial release supports one configured HR Manager identity.
 - The backend automatically assigns the configured identity to every salary audit event.
 - The frontend must not supply or determine the audit identity.
 - A separate `users` table is not required in the initial version.
-- The configured identity provides audit attribution but does not independently verify who performed an operation.
-- The authentication mechanism must be decided before protected operations are exposed.
-- Verified authentication, a user model, and additional roles may be introduced in a future version if requirements expand.
+- The configured identity provides audit attribution. It is not loaded from an authenticated user row.
+- Session authentication is implemented separately (see section 10). A valid session is required for protected employee APIs; salary HTTP routes do not exist yet.
+- A user model and additional roles may be introduced in a future version if requirements expand.
 - Salary records remain the source of truth for applicable compensation. Audit logs preserve accountability and evidence of changes.
 
-### 6.4 Entity Relationships
+### 6.4 UserSession
+
+Represents an authenticated HR Manager session.
+
+Fields (migration `0004_create_user_sessions`):
+
+- `id`: PostgreSQL-generated `BIGINT` primary key.
+- `token_hash`: SHA-256 hex digest of the opaque session token (`VARCHAR(64)`, unique). The raw token is not stored.
+- `created_at`: Session creation timestamp (`TIMESTAMPTZ`).
+- `expires_at`: Expiry timestamp (`TIMESTAMPTZ`).
+- `revoked_at`: Nullable revocation timestamp.
+
+A session authorizes requests only while it is unexpired and `revoked_at` is null.
+
+### 6.5 Entity Relationships
 
 The initial relationships are:
 
@@ -217,6 +233,7 @@ The initial relationships are:
 - Each `SalaryRecord` belongs to one `Employee`.
 - One `SalaryRecord` can have many `SalaryAuditLog` entries.
 - Each `SalaryAuditLog` entry references the affected `SalaryRecord`.
+- `UserSession` rows are independent of employees and salaries. They store only a SHA-256 token hash, timestamps, and optional revocation.
 - The database must enforce referential integrity using primary and foreign key constraints.
 - Employees should ordinarily be deactivated rather than deleted. Salary records and audit logs must not be deleted through ordinary application operations.
 - Foreign-key and deletion policies must prevent cascading deletion from destroying salary or audit history.
@@ -247,7 +264,7 @@ The effective-date lookup must use the latest applicable record rather than simp
 
 ## 8. Compensation Analytics
 
-Compensation analytics will be calculated using persisted employee and salary records.
+Compensation analytics will be calculated using persisted employee and salary records. There is no analytics HTTP API yet; the rules below remain the intended behavior.
 
 The backend will support questions such as:
 
@@ -331,16 +348,33 @@ The design will use:
 - Database constraints and application validation to protect data integrity.
 - Employees should ordinarily be deactivated rather than deleted. Salary records must not be deleted through ordinary application operations, and audit history must be preserved. Foreign-key deletion policies must prevent cascading deletion from destroying salary or audit history.
 - Indexes will be selected based on expected query patterns, including employee searches, salary effective-date lookups, and audit-history retrieval.
-- The seed script will generate approximately 10,000 synthetic employees and associated salary records. It must support repeatable execution without unintentionally creating duplicate records.
+- A seed script will generate approximately 10,000 synthetic employees and associated salary records when implemented. It is not in the repository yet. It must support repeatable execution without unintentionally creating duplicate records.
 - The detailed schema, constraints, index selection, deletion policies, and transaction boundaries are documented in `docs/database-design.md`.
 
 ## 10. Authentication and Authorization
 
-- The initial release supports one configured HR Manager identity. Multi-user management and additional roles are outside the initial scope.
-- The authentication mechanism for the single-user application must be decided before protected employee and salary operations are exposed. The configured HR Manager identity used for audit attribution must not be treated as proof of authentication.
-- The backend must enforce applicable access restrictions rather than relying only on frontend visibility. Credentials and sensitive configuration must remain outside source control.
-- Salary creation and update operations must automatically record the configured HR Manager identity in the audit log. The initial version will not include a separate users table.
-- A future version may introduce verified authentication, a users table, and additional roles if the requirements expand.
+The initial release supports one configured HR Manager. Multi-user management and additional roles remain out of scope.
+
+The configured audit identity (`HR_MANAGER_IDENTITY`) is not proof of authentication. Login uses a separate username and Argon2 password hash (`HR_MANAGER_USERNAME`, `HR_MANAGER_PASSWORD_HASH`).
+
+### 10.1 Implemented flow
+
+1. `POST /api/v1/auth/login` requires a trusted origin. The backend prefers the `Origin` header. If `Origin` is absent, it derives an origin from `Referer`. A present but invalid `Origin` is not replaced by `Referer`. Configured origins (`CSRF_TRUSTED_ORIGINS`) must be exact HTTP or HTTPS origins with a valid hostname and canonical port. Wildcards and suffix matching are rejected at configuration time.
+2. Credentials are checked against the configured username and password hash.
+3. On success, the backend inserts a `user_sessions` row containing only the SHA-256 hash of an opaque token (`secrets.token_urlsafe(32)`). The raw token is returned only in the HttpOnly `acme_session` cookie (`Path=/`, `SameSite=Lax`, `Secure` from `SESSION_COOKIE_SECURE`, `Max-Age` from `SESSION_MAX_AGE_SECONDS`, default 28800 seconds). Cookies are set only after the session insert commits.
+4. The backend also sets `acme_csrf` (not HttpOnly, same Path/SameSite/Secure/Max-Age). The cookie value is an HMAC token bound to that session id, signed with `CSRF_SIGNING_SECRET` (required `SecretStr`, at least 32 characters, not generated at startup).
+5. `require_authenticated_session` reads `acme_session`, hashes it, and accepts the session only if it exists, is unexpired, and is not revoked.
+6. `require_csrf_token` runs after authentication. It requires the `acme_csrf` cookie and the `X-CSRF-Token` header to match, and the token signature to bind to the authenticated session. Missing, mismatched, malformed, or cross-session tokens return 403 with a generic message. CSRF does not replace authentication.
+7. `POST /api/v1/employees` requires both an authenticated session and a valid CSRF token. Employee GET routes require a session only. `GET /health` is public.
+8. `POST /api/v1/auth/logout` requires a session and CSRF token. It sets `revoked_at` on the current session and clears both cookies only after revocation commits.
+
+There is no salary HTTP router yet. Future salary mutation routes should reuse `require_csrf_token`.
+
+### 10.2 Still pending
+
+- React frontend that reads `acme_csrf` and sends `X-CSRF-Token`.
+- Production trusted origins and `SESSION_COOKIE_SECURE=true` on HTTPS.
+- Salary and analytics HTTP protection once those routes exist.
 
 ## 11. Testing Strategy
 
@@ -367,7 +401,7 @@ Test business logic independently, including:
 Test interactions between application components, including:
 
 - Database persistence and constraints.
-- Employee and salary API endpoints.
+- Employee API endpoints (create, get, paginated list) and, when added, salary API endpoints.
 - Pagination, filtering, and error handling.
 - Salary changes and historical record retrieval.
 - Future-dated salary changes.
@@ -377,10 +411,12 @@ Test interactions between application components, including:
 - Analytics queries against persisted data.
 - Currency-specific analytics and employment-status filtering.
 - Preservation of salary and audit history.
+- Login, logout, session expiry/revocation, and CSRF cookie/header validation.
+- Trusted-origin rejection on login and protected-route 401s without a session.
 
 ### 11.3 Frontend Tests
 
-Test important user interactions, including:
+There is no frontend package yet. When it exists, test important user interactions, including:
 
 - Form validation.
 - Employee search and pagination.
@@ -393,39 +429,33 @@ Test important user interactions, including:
 
 ## 12. Proposed Repository Structure
 
+Current layout (no `frontend/` or `scripts/` packages, and no `repositories` layer):
+
 ```text
 acme-salary-management/
+├── artifacts/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
 │   │   ├── core/
+│   │   ├── db/
 │   │   ├── models/
 │   │   ├── schemas/
 │   │   ├── services/
-│   │   ├── repositories/
-│   │   ├── db/
 │   │   └── main.py
 │   ├── migrations/
 │   └── tests/
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── features/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   └── tests/
-│   └── package.json
-├── scripts/
 ├── docs/
 │   ├── requirements.md
 │   ├── architecture.md
 │   └── database-design.md
+├── .env.example
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
 
-This is a proposed structure. Directories will be created when they are needed rather than adding empty folders without a purpose.
+A React `frontend/` tree and seed `scripts/` may be added when those features are implemented. Do not add empty folders without a purpose.
 
 ## 13. Development Principles
 
@@ -459,14 +489,19 @@ The architecture is successful when:
 
 ## 15. Open Decisions
 
-The following implementation decisions remain open:
+Settled by the current implementation:
 
-1. Authentication mechanism and protection of the single-user application.
-2. Database transaction boundaries and test-database strategy.
-3. API contracts, error responses, and pagination conventions.
-4. Deployment target and configuration strategy.
-5. Exact audit snapshot schema and retention requirements.
-6. Whether future versions should support additional salary frequencies or currency conversion.
-7. Whether a future version should support bulk salary changes through a shared batch operation with individual audit entries for each affected employee.
+- Session authentication, CSRF double-submit, trusted-origin login checks, and configuration of secrets/origins.
+- `get_db` commit/rollback; tests against `TEST_DATABASE_URL` with savepoints.
+- Audit snapshots store `amount` (decimal string), `currency`, `pay_frequency`, and `effective_from` (ISO date).
+- Employee list pagination uses `limit` (1–100, default 50) and `offset`.
+
+Still open:
+
+1. Salary and analytics HTTP API contracts, employee search/filter, and remaining error-response conventions.
+2. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`).
+3. Audit retention and administrative access policy.
+4. Whether future versions should support additional salary frequencies or currency conversion.
+5. Whether a future version should support bulk salary changes through a shared batch operation with individual audit entries for each affected employee.
 
 Bulk salary-change workflows are not part of the initial implementation scope. If introduced later, they should support safe retries, progress tracking, and manageable transaction sizes.
