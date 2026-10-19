@@ -11,6 +11,7 @@ from app.services.salary import (
     InvalidSalaryAmountError,
     InvalidSalaryCurrencyError,
     create_salary,
+    list_employee_salaries,
 )
 
 router = APIRouter(
@@ -65,3 +66,21 @@ def create_salary_endpoint(
             detail=INVALID_SALARY_AMOUNT_DETAIL,
         ) from exc
     return SalaryRead.model_validate(record)
+
+
+@router.get(
+    "/{employee_id}/salaries",
+    response_model=list[SalaryRead],
+)
+def list_employee_salaries_endpoint(
+    employee_id: int,
+    db: Session = Depends(get_db),
+) -> list[SalaryRead]:
+    try:
+        records = list_employee_salaries(db, employee_id)
+    except EmployeeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found",
+        ) from exc
+    return [SalaryRead.model_validate(record) for record in records]

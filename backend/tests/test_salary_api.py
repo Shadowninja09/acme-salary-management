@@ -289,3 +289,86 @@ def test_audit_failure_does_not_leave_committed_salary(
         == 0
     )
     assert db_session.scalar(select(func.count()).select_from(SalaryAuditLog)) == 0
+
+
+def test_list_salaries_returns_all_records_newest_effective_date_first(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    older = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    newer = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json={**SALARY_PAYLOAD, "amount": "2000.00", "effective_from": "2026-06-01"},
+    )
+    assert older.status_code == 201
+    assert newer.status_code == 201
+
+    response = authenticated_client.get(f"/api/v1/employees/{employee_id}/salaries")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body] == [newer.json()["id"], older.json()["id"]]
+    assert [item["effective_from"] for item in body] == ["2026-06-01", "2026-01-01"]
+    assert body[0]["amount"] == "2000.00"
+    assert body[1]["amount"] == "1234.56"
+    assert body[0]["employee_id"] == employee_id
+    assert body[0]["currency"] == "INR"
+    for item in body:
+        assert set(item.keys()) == {
+            "id",
+            "employee_id",
+            "amount",
+            "currency",
+            "pay_frequency",
+            "effective_from",
+        }
+        assert isinstance(item["amount"], str)
+
+
+def test_list_salaries_returns_single_record(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+
+    response = authenticated_client.get(f"/api/v1/employees/{employee_id}/salaries")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["id"] == created.json()["id"]
+    assert body[0]["amount"] == "1234.56"
+    assert isinstance(body[0]["amount"], str)
+
+
+def test_list_salaries_empty_for_employee_without_records(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    response = authenticated_client.get(f"/api/v1/employees/{employee_id}/salaries")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_salaries_unknown_employee_returns_404(
+    authenticated_client: TestClient,
+) -> None:
+    response = authenticated_client.get("/api/v1/employees/999999999/salaries")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Employee not found"}
+
+
+def test_list_salaries_unauthenticated_returns_401(api_client: TestClient) -> None:
+    response = api_client.get("/api/v1/employees/1/salaries")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": NOT_AUTHENTICATED_DETAIL}

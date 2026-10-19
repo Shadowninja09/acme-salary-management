@@ -192,6 +192,17 @@ def correct_salary(
     return record
 
 
+def list_employee_salaries(db: Session, employee_id: int) -> list[SalaryRecord]:
+    _require_employee(db, employee_id)
+    return list(
+        db.scalars(
+            select(SalaryRecord)
+            .where(SalaryRecord.employee_id == employee_id)
+            .order_by(SalaryRecord.effective_from.desc(), SalaryRecord.id.desc())
+        ).all()
+    )
+
+
 def get_applicable_salary(
     db: Session, employee_id: int, as_of: date
 ) -> SalaryRecord | None:

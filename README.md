@@ -44,8 +44,9 @@ Employee HTTP APIs require an authenticated session. Create also requires CSRF v
 Salary HTTP (session required; create also requires CSRF):
 
 - `POST /api/v1/employees/{employee_id}/salaries` — create a salary (`amount` as a decimal string or integer). Duplicate employee + effective date returns 409.
+- `GET /api/v1/employees/{employee_id}/salaries` — salary history for that employee, newest `effective_from` first. Empty list if the employee has no salaries.
 
-Salary history, applicable-as-of, and correction HTTP endpoints are not implemented yet. Create/correct/applicable-salary lookup and audit logging exist in the salary service.
+Applicable-as-of and correction HTTP endpoints are not implemented yet. Create/correct/applicable-salary lookup and audit logging exist in the salary service.
 
 ## Repository structure
 
@@ -108,9 +109,9 @@ Do not run application migrations as part of pytest setup against `acme_salary`.
 
 ## Project status
 
-**Phase:** Backend employee HTTP API and create-salary HTTP API, with session authentication and CSRF.
+**Phase:** Backend employee HTTP API, create-salary HTTP API, and salary-history HTTP API, with session authentication and CSRF on mutations.
 
-Not done: employee update/search APIs; salary history, applicable-as-of, and correction HTTP endpoints; analytics; 10k seed; frontend; deployment; video demo.
+Not done: employee update/search APIs; salary applicable-as-of and correction HTTP endpoints; analytics; 10k seed; frontend; deployment; video demo.
 
 ## Development approach
 
@@ -123,6 +124,6 @@ Not done: employee update/search APIs; salary history, applicable-as-of, and cor
 ## Open decisions
 
 1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`)
-2. Remaining salary HTTP contracts (history, as-of, correction), analytics APIs, and employee search/filter
+2. Remaining salary HTTP contracts (as-of, correction), analytics APIs, and employee search/filter
 3. Audit retention and administrative access policy
 4. UI component library

@@ -27,6 +27,7 @@ from app.services.salary import (
     correct_salary,
     create_salary,
     get_applicable_salary,
+    list_employee_salaries,
 )
 
 
@@ -230,6 +231,39 @@ def test_invalid_correction_leaves_persisted_salary_unchanged(
     assert stored.currency == Currency.INR.value
     assert stored.pay_frequency == PayFrequency.MONTHLY.value
     assert stored.effective_from == date(2026, 1, 1)
+
+
+def test_list_employee_salaries_orders_by_effective_from_desc(
+    db_session: Session,
+) -> None:
+    employee = _persist_employee(db_session)
+    older = create_salary(
+        db_session, _create_payload(employee.id, effective_from=date(2026, 1, 1))
+    )
+    newer = create_salary(
+        db_session,
+        _create_payload(
+            employee.id,
+            amount=Decimal("2000.00"),
+            effective_from=date(2026, 6, 1),
+        ),
+    )
+
+    history = list_employee_salaries(db_session, employee.id)
+
+    assert [record.id for record in history] == [newer.id, older.id]
+    assert [record.effective_from for record in history] == [
+        date(2026, 6, 1),
+        date(2026, 1, 1),
+    ]
+
+
+def test_list_employee_salaries_empty_and_unknown(db_session: Session) -> None:
+    employee = _persist_employee(db_session)
+
+    assert list_employee_salaries(db_session, employee.id) == []
+    with pytest.raises(EmployeeNotFoundError):
+        list_employee_salaries(db_session, 999999999)
 
 
 def test_get_applicable_salary_as_of_date(db_session: Session) -> None:
