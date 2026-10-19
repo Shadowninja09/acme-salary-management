@@ -61,7 +61,6 @@ def test_valid_active_session_is_accepted(db_session: Session) -> None:
     raw_token, record = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
 
     authenticated = require_authenticated_session(
@@ -92,9 +91,8 @@ def test_revoked_session_is_rejected(db_session: Session) -> None:
     raw_token, record = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
-    record.revoked_at = _NOW
+    record.revoked_at = datetime.now(timezone.utc)
     db_session.flush()
 
     with pytest.raises(HTTPException) as exc_info:

@@ -25,7 +25,6 @@ _TEST_USERNAME = "hr.manager"
 _TEST_PASSWORD = "test-only-login-password"
 _TEST_PASSWORD_HASH = PasswordHasher().hash(_TEST_PASSWORD)
 _PLACEHOLDER_DATABASE_URL = "postgresql+psycopg://pytest:pytest@127.0.0.1:1/acme_unused"
-_NOW = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
 _TEST_CSRF_SECRET = "test-only-logout-csrf-signing-secret"
 _TRUSTED_LOGIN_ORIGIN = "https://hr.test"
 
@@ -220,11 +219,10 @@ def test_unknown_expired_or_revoked_token_cannot_logout(
     revoked_token, revoked_record = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
     revoked_id = revoked_record.id
     revoked_hash = revoked_record.token_hash
-    revoked_record.revoked_at = _NOW
+    revoked_record.revoked_at = datetime.now(timezone.utc)
     db_session.flush()
     db_session.commit()
     revoked = _logout(
@@ -248,12 +246,10 @@ def test_logout_does_not_revoke_other_sessions(
     current_token, current = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
     other_token, other = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
 
     response = _logout(
@@ -267,7 +263,7 @@ def test_logout_does_not_revoke_other_sessions(
     db_session.refresh(other)
     assert current.revoked_at is not None
     assert other.revoked_at is None
-    resolve_active_session(db_session, other_token, now=_NOW)
+    resolve_active_session(db_session, other_token)
 
 
 def test_commit_failure_does_not_clear_cookie_or_revoke(
@@ -278,7 +274,6 @@ def test_commit_failure_does_not_clear_cookie_or_revoke(
     raw_token, record = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
     session_id = record.id
     token_hash = record.token_hash
@@ -341,7 +336,6 @@ def test_logout_rejects_missing_csrf_without_revoking(
     raw_token, record = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
     session_id = record.id
     db_session.commit()
@@ -364,12 +358,10 @@ def test_logout_rejects_invalid_csrf_without_revoking(
     raw_token, record = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
     _other_token, other = issue_hr_manager_session(
         db_session,
         lifetime_seconds=3600,
-        now=_NOW,
     )
     session_id = record.id
     other_csrf = _csrf_token_for(other.id, logout_settings)
