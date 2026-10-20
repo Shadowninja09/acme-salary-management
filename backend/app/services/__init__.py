@@ -4,6 +4,7 @@ from app.services.employee import (
     get_employee_by_id,
     list_employees,
 )
+from app.services.country_currency import UnsupportedSalaryCurrencyForCountryError
 from app.services.salary import (
     DuplicateSalaryEffectiveDateError,
     EmployeeNotFoundError,
@@ -25,6 +26,7 @@ __all__ = [
     "InvalidSalaryAmountError",
     "InvalidSalaryCorrectionReasonError",
     "InvalidSalaryCurrencyError",
+    "UnsupportedSalaryCurrencyForCountryError",
     "SalaryNotFoundError",
     "correct_salary",
     "create_employee",

@@ -12,6 +12,7 @@ from app.schemas.salary import (
     SalaryCreateRequest,
     SalaryRead,
 )
+from app.services.country_currency import UnsupportedSalaryCurrencyForCountryError
 from app.services.salary import (
     DuplicateSalaryEffectiveDateError,
     EmployeeNotFoundError,
@@ -69,6 +70,11 @@ def create_salary_endpoint(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=DUPLICATE_EFFECTIVE_DATE_DETAIL,
+        ) from exc
+    except UnsupportedSalaryCurrencyForCountryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=exc.detail,
         ) from exc
     except (
         InvalidSalaryAmountError,
@@ -171,6 +177,11 @@ def correct_salary_endpoint(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=INVALID_CORRECTION_REASON_DETAIL,
+        ) from exc
+    except UnsupportedSalaryCurrencyForCountryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=exc.detail,
         ) from exc
     except (
         InvalidSalaryAmountError,

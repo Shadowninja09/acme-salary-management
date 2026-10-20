@@ -25,9 +25,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.employee import Employee, EmploymentStatus
-from app.models.salary import Currency, PayFrequency
+from app.models.salary import PayFrequency
 from app.schemas.employee import EmployeeCreate
 from app.schemas.salary import SalaryCreate
+from app.services.country_currency import permitted_currencies_for_country
 from app.services.employee import create_employee
 from app.services.salary import create_salary
 
@@ -61,7 +62,6 @@ JOB_TITLES = (
     "Coordinator",
     "Director",
 )
-CURRENCIES = tuple(Currency)
 FREQUENCIES = tuple(PayFrequency)
 
 
@@ -160,7 +160,7 @@ def _amount_for(rng: random.Random, frequency: PayFrequency) -> Decimal:
     return Decimal(major) + (Decimal(cents) / Decimal(100))
 
 
-def build_salaries(employee_id: int, index: int) -> list[SalaryCreate]:
+def build_salaries(employee_id: int, index: int, country: str) -> list[SalaryCreate]:
     remainder = index % 10
     if remainder == 0:
         return []
@@ -170,6 +170,10 @@ def build_salaries(employee_id: int, index: int) -> list[SalaryCreate]:
         count = 2
     else:
         count = 3
+
+    permitted = permitted_currencies_for_country(country)
+    if not permitted:
+        raise ValueError(f"No salary currency policy for country {country!r}")
 
     rng = _rng_for(index)
     payloads: list[SalaryCreate] = []
@@ -187,7 +191,7 @@ def build_salaries(employee_id: int, index: int) -> list[SalaryCreate]:
             SalaryCreate(
                 employee_id=employee_id,
                 amount=_amount_for(rng, frequency),
-                currency=CURRENCIES[(index + offset) % len(CURRENCIES)],
+                currency=permitted[(index + offset) % len(permitted)],
                 pay_frequency=frequency,
                 effective_from=effective_from,
             )
@@ -218,7 +222,7 @@ def seed_employees(db: Session, count: int) -> tuple[int, int, int]:
                     batch_skipped += 1
                     continue
                 employee = create_employee(db, build_employee(index))
-                salaries = build_salaries(employee.id, index)
+                salaries = build_salaries(employee.id, index, employee.country)
                 for payload in salaries:
                     create_salary(db, payload)
                 batch_employees += 1

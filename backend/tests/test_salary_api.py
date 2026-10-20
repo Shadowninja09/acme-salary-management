@@ -39,14 +39,14 @@ EMPLOYEE_PAYLOAD = {
 
 SALARY_PAYLOAD = {
     "amount": "1234.56",
-    "currency": "INR",
+    "currency": "GBP",
     "pay_frequency": "MONTHLY",
     "effective_from": "2026-01-01",
 }
 
 CORRECTION_PAYLOAD = {
     "amount": "2000.00",
-    "currency": "USD",
+    "currency": "GBP",
     "pay_frequency": "ANNUAL",
     "effective_from": "2026-02-01",
     "reason": "Corrected recorded amount",
@@ -81,7 +81,7 @@ def test_create_salary_returns_201_and_expected_fields(
     body = response.json()
     assert body["employee_id"] == employee_id
     assert body["amount"] == "1234.56"
-    assert body["currency"] == "INR"
+    assert body["currency"] == "GBP"
     assert body["pay_frequency"] == "MONTHLY"
     assert body["effective_from"] == "2026-01-01"
     assert body["id"] is not None
@@ -112,7 +112,7 @@ def test_create_salary_persists_create_audit_with_configured_identity(
     assert log.old_values is None
     assert log.new_values == {
         "amount": "1234.56",
-        "currency": "INR",
+        "currency": "GBP",
         "pay_frequency": "MONTHLY",
         "effective_from": "2026-01-01",
     }
@@ -329,7 +329,7 @@ def test_list_salaries_returns_all_records_newest_effective_date_first(
     assert body[0]["amount"] == "2000.00"
     assert body[1]["amount"] == "1234.56"
     assert body[0]["employee_id"] == employee_id
-    assert body[0]["currency"] == "INR"
+    assert body[0]["currency"] == "GBP"
     for item in body:
         assert set(item.keys()) == {
             "id",
@@ -425,13 +425,13 @@ def test_list_salary_corrections_returns_update_audit(
     assert item["reason"] == "Corrected recorded amount"
     assert item["old_values"] == {
         "amount": "1234.56",
-        "currency": "INR",
+        "currency": "GBP",
         "pay_frequency": "MONTHLY",
         "effective_from": "2026-01-01",
     }
     assert item["new_values"] == {
         "amount": "2000.00",
-        "currency": "USD",
+        "currency": "GBP",
         "pay_frequency": "ANNUAL",
         "effective_from": "2026-02-01",
     }
@@ -550,7 +550,7 @@ def test_applicable_salary_returns_latest_on_or_before_date(
     assert body["employee_id"] == employee_id
     assert body["amount"] == "1234.56"
     assert isinstance(body["amount"], str)
-    assert body["currency"] == "INR"
+    assert body["currency"] == "GBP"
     assert body["pay_frequency"] == "MONTHLY"
     assert body["effective_from"] == "2026-01-01"
     assert set(body.keys()) == {
@@ -705,7 +705,7 @@ def test_correct_salary_updates_existing_record_and_keeps_id(
     assert body["employee_id"] == employee_id
     assert body["amount"] == "2000.00"
     assert isinstance(body["amount"], str)
-    assert body["currency"] == "USD"
+    assert body["currency"] == "GBP"
     assert body["pay_frequency"] == "ANNUAL"
     assert body["effective_from"] == "2026-02-01"
     stored = db_session.get(SalaryRecord, salary_id)
@@ -737,7 +737,7 @@ def test_correct_salary_keeps_existing_effective_date(
         f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
         json={
             **CORRECTION_PAYLOAD,
-            "currency": "INR",
+            "currency": "GBP",
             "pay_frequency": "MONTHLY",
             "effective_from": "2026-01-01",
         },
@@ -749,7 +749,7 @@ def test_correct_salary_keeps_existing_effective_date(
     assert body["employee_id"] == employee_id
     assert body["amount"] == "2000.00"
     assert isinstance(body["amount"], str)
-    assert body["currency"] == "INR"
+    assert body["currency"] == "GBP"
     assert body["pay_frequency"] == "MONTHLY"
     assert body["effective_from"] == "2026-01-01"
     stored = db_session.get(SalaryRecord, salary_id)
@@ -788,13 +788,13 @@ def test_correct_salary_writes_update_audit(
     log = updates[0]
     assert log.old_values == {
         "amount": "1234.56",
-        "currency": "INR",
+        "currency": "GBP",
         "pay_frequency": "MONTHLY",
         "effective_from": "2026-01-01",
     }
     assert log.new_values == {
         "amount": "2000.00",
-        "currency": "USD",
+        "currency": "GBP",
         "pay_frequency": "ANNUAL",
         "effective_from": "2026-02-01",
     }
@@ -884,7 +884,7 @@ def test_correct_salary_duplicate_effective_date_returns_409(
     assert stored is not None
     assert stored.id == salary_id
     assert str(stored.amount) == "1234.56"
-    assert stored.currency == "INR"
+    assert stored.currency == "GBP"
     assert stored.pay_frequency == "MONTHLY"
     assert stored.effective_from.isoformat() == "2026-01-01"
     logs = list(
@@ -996,7 +996,7 @@ def test_audit_failure_does_not_commit_salary_correction(
         SalaryCreate(
             employee_id=employee.id,
             amount=Decimal("1234.56"),
-            currency=Currency.INR,
+            currency=Currency.GBP,
             pay_frequency=PayFrequency.MONTHLY,
             effective_from=date(2026, 1, 1),
         ),
@@ -1044,7 +1044,7 @@ def test_audit_failure_does_not_commit_salary_correction(
     stored = db_session.get(SalaryRecord, salary_id)
     assert stored is not None
     assert str(stored.amount) == "1234.56"
-    assert stored.currency == "INR"
+    assert stored.currency == "GBP"
     assert stored.pay_frequency == "MONTHLY"
     assert stored.effective_from.isoformat() == "2026-01-01"
     logs = list(

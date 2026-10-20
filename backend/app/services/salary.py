@@ -11,6 +11,7 @@ from app.models import AuditAction, SalaryAuditLog
 from app.models.employee import Employee
 from app.models.salary import Currency, PayFrequency, SalaryRecord
 from app.schemas.salary import SalaryCorrection, SalaryCreate
+from app.services.country_currency import require_currency_permitted_for_country
 
 SALARY_EFFECTIVE_DATE_UNIQUE_CONSTRAINT = (
     "uq_salary_records_employee_id_effective_from"
@@ -134,11 +135,13 @@ def _write_salary_audit(
 
 
 def create_salary(db: Session, data: SalaryCreate) -> SalaryRecord:
-    _require_employee(db, data.employee_id)
+    employee = _require_employee(db, data.employee_id)
+    currency = _validate_currency(data.currency)
+    require_currency_permitted_for_country(employee.country, currency)
     record = SalaryRecord(
         employee_id=data.employee_id,
         amount=_normalize_amount(data.amount),
-        currency=_validate_currency(data.currency),
+        currency=currency,
         pay_frequency=_validate_pay_frequency(data.pay_frequency),
         effective_from=data.effective_from,
     )
@@ -163,7 +166,7 @@ def create_salary(db: Session, data: SalaryCreate) -> SalaryRecord:
 def correct_salary(
     db: Session, employee_id: int, salary_id: int, data: SalaryCorrection
 ) -> SalaryRecord:
-    _require_employee(db, employee_id)
+    employee = _require_employee(db, employee_id)
     reason = _validate_correction_reason(data.reason)
     amount = _normalize_amount(data.amount)
     currency = _validate_currency(data.currency)
@@ -171,6 +174,8 @@ def correct_salary(
     record = db.get(SalaryRecord, salary_id)
     if record is None or record.employee_id != employee_id:
         raise SalaryNotFoundError
+    if currency != record.currency:
+        require_currency_permitted_for_country(employee.country, currency)
     old_values = _salary_snapshot(record)
     record.amount = amount
     record.currency = currency

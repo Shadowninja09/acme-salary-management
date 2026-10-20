@@ -53,7 +53,7 @@ def _create_payload(employee_id: int, **overrides: object) -> SalaryCreate:
     values = {
         "employee_id": employee_id,
         "amount": Decimal("1234.56"),
-        "currency": Currency.INR,
+        "currency": Currency.GBP,
         "pay_frequency": PayFrequency.MONTHLY,
         "effective_from": date(2026, 1, 1),
     }
@@ -64,7 +64,7 @@ def _create_payload(employee_id: int, **overrides: object) -> SalaryCreate:
 def _correction_payload(**overrides: object) -> SalaryCorrection:
     values = {
         "amount": Decimal("2000.00"),
-        "currency": Currency.USD,
+        "currency": Currency.GBP,
         "pay_frequency": PayFrequency.ANNUAL,
         "effective_from": date(2026, 2, 1),
         "reason": "Corrected recorded amount",
@@ -81,7 +81,7 @@ def test_create_salary_succeeds(db_session: Session) -> None:
     assert record.employee_id == employee.id
     assert record.amount == Decimal("1.23")
     assert isinstance(record.amount, Decimal)
-    assert record.currency == Currency.INR.value
+    assert record.currency == Currency.GBP.value
     assert record.pay_frequency == PayFrequency.MONTHLY.value
     assert record.effective_from == date(2026, 1, 1)
 
@@ -168,7 +168,7 @@ def test_correct_salary_replaces_same_row(db_session: Session) -> None:
 
     assert updated.id == original.id
     assert updated.amount == Decimal("2000.00")
-    assert updated.currency == Currency.USD.value
+    assert updated.currency == Currency.GBP.value
     assert updated.pay_frequency == PayFrequency.ANNUAL.value
     assert updated.effective_from == date(2026, 2, 1)
     unchanged = db_session.get(SalaryRecord, other.id)
@@ -190,7 +190,7 @@ def test_correct_salary_keeps_existing_effective_date(
         original.id,
         _correction_payload(
             amount=Decimal("2000.00"),
-            currency=Currency.INR,
+            currency=Currency.GBP,
             pay_frequency=PayFrequency.MONTHLY,
             effective_from=date(2026, 1, 1),
         ),
@@ -200,7 +200,7 @@ def test_correct_salary_keeps_existing_effective_date(
 
     assert updated.id == original_id
     assert updated.amount == Decimal("2000.00")
-    assert updated.currency == Currency.INR.value
+    assert updated.currency == Currency.GBP.value
     assert updated.pay_frequency == PayFrequency.MONTHLY.value
     assert updated.effective_from == date(2026, 1, 1)
     assert db_session.scalar(select(func.count()).select_from(SalaryRecord)) == 1
@@ -209,13 +209,13 @@ def test_correct_salary_keeps_existing_effective_date(
     log = updates[0]
     assert log.old_values == {
         "amount": "1234.56",
-        "currency": Currency.INR.value,
+        "currency": Currency.GBP.value,
         "pay_frequency": PayFrequency.MONTHLY.value,
         "effective_from": "2026-01-01",
     }
     assert log.new_values == {
         "amount": "2000.00",
-        "currency": Currency.INR.value,
+        "currency": Currency.GBP.value,
         "pay_frequency": PayFrequency.MONTHLY.value,
         "effective_from": "2026-01-01",
     }
@@ -307,7 +307,7 @@ def test_correct_salary_rejects_duplicate_effective_date(
     assert stored is not None
     assert stored.id == original.id
     assert stored.amount == Decimal("1234.56")
-    assert stored.currency == Currency.INR.value
+    assert stored.currency == Currency.GBP.value
     assert stored.pay_frequency == PayFrequency.MONTHLY.value
     assert stored.effective_from == date(2026, 1, 1)
     assert len(updates) == 0
@@ -328,7 +328,7 @@ def test_invalid_correction_leaves_persisted_salary_unchanged(
     stored = db_session.get(SalaryRecord, original.id)
     assert stored is not None
     assert stored.amount == Decimal("1234.56")
-    assert stored.currency == Currency.INR.value
+    assert stored.currency == Currency.GBP.value
     assert stored.pay_frequency == PayFrequency.MONTHLY.value
     assert stored.effective_from == date(2026, 1, 1)
 
@@ -454,7 +454,7 @@ def test_create_salary_writes_create_audit_entry(db_session: Session) -> None:
     assert log.old_values is None
     assert log.new_values == {
         "amount": "1234.56",
-        "currency": Currency.INR.value,
+        "currency": Currency.GBP.value,
         "pay_frequency": PayFrequency.MONTHLY.value,
         "effective_from": "2026-01-01",
     }
@@ -480,13 +480,13 @@ def test_correct_salary_writes_update_audit_entry(db_session: Session) -> None:
     log = updates[0]
     assert log.old_values == {
         "amount": "1234.56",
-        "currency": Currency.INR.value,
+        "currency": Currency.GBP.value,
         "pay_frequency": PayFrequency.MONTHLY.value,
         "effective_from": "2026-01-01",
     }
     assert log.new_values == {
         "amount": "2000.00",
-        "currency": Currency.USD.value,
+        "currency": Currency.GBP.value,
         "pay_frequency": PayFrequency.ANNUAL.value,
         "effective_from": "2026-02-01",
     }
@@ -554,13 +554,13 @@ def test_list_employee_salary_corrections_returns_update_audit(
     assert log.action == AuditAction.UPDATE.value
     assert log.old_values == {
         "amount": "1234.56",
-        "currency": Currency.INR.value,
+        "currency": Currency.GBP.value,
         "pay_frequency": PayFrequency.MONTHLY.value,
         "effective_from": "2026-01-01",
     }
     assert log.new_values == {
         "amount": "2000.00",
-        "currency": Currency.USD.value,
+        "currency": Currency.GBP.value,
         "pay_frequency": PayFrequency.ANNUAL.value,
         "effective_from": "2026-02-01",
     }

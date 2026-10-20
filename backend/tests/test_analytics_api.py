@@ -255,8 +255,8 @@ def test_different_currencies_are_never_combined(
     authenticated_client: TestClient,
     db_session: Session,
 ) -> None:
-    inr_id = _employee(db_session, "AN-INR")
-    usd_id = _employee(db_session, "AN-USD")
+    inr_id = _employee(db_session, "AN-INR", country="India")
+    usd_id = _employee(db_session, "AN-USD", country="United States")
     _salary(db_session, inr_id, amount="100.00", currency=Currency.INR)
     _salary(db_session, usd_id, amount="200.00", currency=Currency.USD)
 
@@ -313,7 +313,7 @@ def test_department_and_country_breakdowns(
     )
     _salary(db_session, eng_in, amount="100.00")
     _salary(db_session, sales_in, amount="300.00")
-    _salary(db_session, eng_uk, amount="500.00")
+    _salary(db_session, eng_uk, amount="500.00", currency=Currency.GBP)
 
     body = _get(authenticated_client).json()
     departments = {
@@ -325,14 +325,16 @@ def test_department_and_country_breakdowns(
         for item in body["by_country"]
     }
 
-    assert departments[("Engineering", "INR", "ANNUAL")]["employee_count"] == 2
-    assert departments[("Engineering", "INR", "ANNUAL")]["average_salary"] == "300.00"
+    assert departments[("Engineering", "INR", "ANNUAL")]["employee_count"] == 1
+    assert departments[("Engineering", "INR", "ANNUAL")]["average_salary"] == "100.00"
     assert departments[("Engineering", "INR", "ANNUAL")]["minimum_salary"] == "100.00"
-    assert departments[("Engineering", "INR", "ANNUAL")]["maximum_salary"] == "500.00"
+    assert departments[("Engineering", "INR", "ANNUAL")]["maximum_salary"] == "100.00"
+    assert departments[("Engineering", "GBP", "ANNUAL")]["employee_count"] == 1
+    assert departments[("Engineering", "GBP", "ANNUAL")]["average_salary"] == "500.00"
     assert departments[("Sales", "INR", "ANNUAL")]["employee_count"] == 1
     assert departments[("Sales", "INR", "ANNUAL")]["average_salary"] == "300.00"
 
     assert countries[("India", "INR", "ANNUAL")]["employee_count"] == 2
     assert countries[("India", "INR", "ANNUAL")]["average_salary"] == "200.00"
-    assert countries[("United Kingdom", "INR", "ANNUAL")]["employee_count"] == 1
-    assert countries[("United Kingdom", "INR", "ANNUAL")]["average_salary"] == "500.00"
+    assert countries[("United Kingdom", "GBP", "ANNUAL")]["employee_count"] == 1
+    assert countries[("United Kingdom", "GBP", "ANNUAL")]["average_salary"] == "500.00"
