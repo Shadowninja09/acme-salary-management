@@ -21,6 +21,12 @@
   color: #14213d;
 }
 
+.app-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .app-header button {
   padding: 0.45rem 0.85rem;
   border: 1px solid #c5ccd6;
@@ -136,6 +142,18 @@
   font-size: 0.875rem;
   font-weight: 600;
   color: #14213d;
+}
+
+.directory-controls .row-action {
+  align-self: flex-end;
+}
+
+.analytics-counts {
+  margin-bottom: 1.75rem;
+}
+
+.analytics .table-wrap {
+  margin-bottom: 1.75rem;
 }
 
 .directory-controls input,

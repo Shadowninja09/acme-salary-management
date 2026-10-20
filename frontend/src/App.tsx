@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { logout } from './api/auth'
 import { ApiError } from './api/client'
 import { listEmployees } from './api/employees'
+import { CompensationAnalyticsView } from './components/CompensationAnalytics'
 import { EmployeeDetail } from './components/EmployeeDetail'
 import { EmployeeDirectory } from './components/EmployeeDirectory'
 import { LoginForm } from './components/LoginForm'
 import './App.css'
 
 type SessionState = 'checking' | 'anonymous' | 'authenticated'
+type AuthenticatedView = 'directory' | 'analytics'
 
 function App() {
   const [session, setSession] = useState<SessionState>('checking')
@@ -15,6 +17,7 @@ function App() {
   const [logoutError, setLogoutError] = useState<string | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null)
+  const [view, setView] = useState<AuthenticatedView>('directory')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -59,6 +62,7 @@ function App() {
         throw new ApiError(0, 'Sign-out did not complete. Try again.')
       }
       setSelectedEmployeeId(null)
+      setView('directory')
       setSessionError(null)
       setSession('anonymous')
     } catch (cause) {
@@ -96,24 +100,50 @@ function App() {
         <>
           <header className="app-header">
             <p className="app-header-title">ACME Salary Management</p>
-            <button type="button" onClick={() => void handleLogout()} disabled={loggingOut}>
-              {loggingOut ? 'Signing out…' : 'Logout'}
-            </button>
+            <div className="app-header-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedEmployeeId(null)
+                  setView('directory')
+                }}
+              >
+                Directory
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedEmployeeId(null)
+                  setView('analytics')
+                }}
+              >
+                Analytics
+              </button>
+              <button type="button" onClick={() => void handleLogout()} disabled={loggingOut}>
+                {loggingOut ? 'Signing out…' : 'Logout'}
+              </button>
+            </div>
           </header>
           {logoutError ? (
             <p className="directory-status directory-error" role="alert">
               {logoutError}
             </p>
           ) : null}
-          <div hidden={selectedEmployeeId !== null}>
-            <EmployeeDirectory onSelectEmployee={setSelectedEmployeeId} />
-          </div>
-          {selectedEmployeeId !== null ? (
-            <EmployeeDetail
-              employeeId={selectedEmployeeId}
-              onBack={() => setSelectedEmployeeId(null)}
-            />
-          ) : null}
+          {view === 'directory' ? (
+            <>
+              <div hidden={selectedEmployeeId !== null}>
+                <EmployeeDirectory onSelectEmployee={setSelectedEmployeeId} />
+              </div>
+              {selectedEmployeeId !== null ? (
+                <EmployeeDetail
+                  employeeId={selectedEmployeeId}
+                  onBack={() => setSelectedEmployeeId(null)}
+                />
+              ) : null}
+            </>
+          ) : (
+            <CompensationAnalyticsView onOpenDirectory={() => setView('directory')} />
+          )}
         </>
       ) : null}
     </main>
