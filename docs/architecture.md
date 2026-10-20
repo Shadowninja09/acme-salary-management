@@ -14,8 +14,8 @@ The initial release supports one configured HR Manager. The backend authenticate
 
 | Component | Technology | Responsibility |
 |---|---|---|
-| Frontend | React (planned; not in the repository) | User interface and interactions |
-| Frontend build tool | Vite (planned) | Frontend development and production builds |
+| Frontend | React 19 and TypeScript (`frontend/`) | HR Manager UI: login, directory, salary history, add/correct salary, correction history |
+| Frontend build tool | Vite 8 | Dev server (proxies `/api` to FastAPI), production build |
 | Backend API | FastAPI | HTTP endpoints and request handling |
 | Request/response validation | Pydantic | Validate API inputs and outputs |
 | ORM | SQLAlchemy | Database access and object-relational mapping |
@@ -23,28 +23,30 @@ The initial release supports one configured HR Manager. The backend authenticate
 | Database | PostgreSQL | Persistent employee and salary data |
 | Backend testing | pytest | Unit and integration tests |
 | API testing | FastAPI TestClient | Test HTTP endpoints |
-| Frontend testing | Vitest and React Testing Library | Test frontend behavior |
-| Version control | Git and GitHub | Track and review changes |
+| Frontend checks | ESLint and `tsc` (`npm run lint`, `npm run build`) | Lint and typecheck/build. Vitest / React Testing Library are **not** in the frontend package |
+| Version control | Git | Track and review changes |
 
 ## 3. High-Level Architecture
 
-The application follows a client-server architecture. The FastAPI backend and PostgreSQL schema are in the repository. The React frontend is still planned.
+The application follows a client-server architecture. The FastAPI backend, PostgreSQL schema, and React frontend are in the repository. Compensation **analytics** HTTP and UI are not implemented.
 
 ```text
 +----------------------------------+
-|          React Frontend          |
+|     React + Vite Frontend        |
 |                                  |
-| Employee Management              |
-| Salary Management and History    |
-| Compensation Analytics           |
+| Login / Logout                   |
+| Employee Directory (paginated)   |
+| Salary History, Add, Correct     |
+| Correction History               |
+| Analytics (not implemented)      |
 +----------------+-----------------+
                  |
-                 | HTTP / JSON
+                 | HTTP / JSON (Vite proxies /api in development)
                  v
 +----------------------------------+
 |          FastAPI Backend         |
 |                                  |
-| API Routes                       |
+| Auth, Employee, Salary Routes    |
 | Request / Response Validation    |
 | Business Service Layer           |
 | Data Access Layer                |
@@ -62,9 +64,9 @@ The application follows a client-server architecture. The FastAPI backend and Po
 +----------------------------------+
 ```
 
-The frontend will communicate with the backend through REST APIs. The backend will validate requests, enforce business rules, execute database operations, and return structured responses.
+The frontend communicates with the backend through REST APIs (`credentials: 'include'`). In local development, Vite proxies `/api` to `http://127.0.0.1:8000` so session cookies stay on the same origin as the UI. The backend validates requests, enforces business rules, executes database operations, and returns structured responses.
 
-The frontend will not access PostgreSQL directly.
+The frontend does not access PostgreSQL directly.
 
 ## 4. Backend Architecture
 
@@ -89,8 +91,8 @@ Responsibilities:
 - Implement employee and salary management use cases.
 - Enforce salary-history and effective-date rules.
 - Determine the applicable salary for a specified date.
-- Normalize monthly and annual salaries for analytics.
-- Apply employment-status, reporting-date, and currency rules to analytics.
+- Normalize monthly and annual salaries for analytics **when analytics is implemented**.
+- Apply employment-status, reporting-date, and currency rules to analytics **when analytics is implemented**.
 - Coordinate operations involving multiple database records.
 - Ensure salary changes and their corresponding audit entries are persisted atomically.
 - Ensure salary corrections retain their before-and-after values and reason.
@@ -116,24 +118,18 @@ Responsibilities:
 
 ## 5. Frontend Architecture
 
-The React application is not in the repository yet. When added, it will be organized around the main user workflows:
+The React application lives in `frontend/`. Implemented workflows:
 
-- Employee management.
-- Salary management and history.
-- Compensation analytics.
+- HR Manager login and logout.
+- Employee directory with `limit`/`offset` pagination. Search and employment-status controls filter the **current page of API results**, not the full dataset (there is no search query on `GET /api/v1/employees`).
+- Employee details, salary history, add salary, and salary correction (reason required). After a successful correction, history and correction history refresh and the correction form closes.
+- Correction history table from `GET /api/v1/employees/{id}/salary-corrections` (UPDATE audits only). Displays `changed_at`, salary record id, old/new snapshots, reason, and `changed_by` from the API. The UI does not send `changed_by`.
 
-Frontend responsibilities include:
+Compensation analytics views are **not** implemented.
 
-- Rendering forms, tables, filters, and analytics views.
-- Validating user input for immediate feedback.
-- Calling backend APIs.
-- Displaying loading, success, empty, and error states.
-- Managing pagination and filter state.
-- Displaying salary history and audit information to the authorized application user.
+The shared API client (`frontend/src/api/client.ts`) sends cookies on every request. For POST and PATCH other than login, it copies the `acme_csrf` cookie into `X-CSRF-Token` when that header is not already set. GET requests do not attach a CSRF header.
 
-The frontend will not independently calculate authoritative compensation analytics. The backend will enforce business rules and provide the results.
-
-Frontend validation improves usability but does not replace backend validation or access restrictions.
+Frontend validation (for example salary amount format) improves usability but does not replace backend validation or access restrictions. There is no frontend unit/component test runner in `frontend/package.json`.
 
 ## 6. Initial Domain Model
 
@@ -207,7 +203,7 @@ The initial release supports one configured HR Manager identity.
 - The frontend must not supply or determine the audit identity.
 - A separate `users` table is not required in the initial version.
 - The configured identity provides audit attribution. It is not loaded from an authenticated user row.
-- Session authentication is implemented separately (see section 10). A valid session is required for protected employee APIs; salary HTTP routes do not exist yet.
+- Session authentication is implemented separately (see section 10). A valid session is required for protected employee and salary APIs.
 - A user model and additional roles may be introduced in a future version if requirements expand.
 - Salary records remain the source of truth for applicable compensation. Audit logs preserve accountability and evidence of changes.
 
@@ -348,7 +344,7 @@ The design will use:
 - Database constraints and application validation to protect data integrity.
 - Employees should ordinarily be deactivated rather than deleted. Salary records must not be deleted through ordinary application operations, and audit history must be preserved. Foreign-key deletion policies must prevent cascading deletion from destroying salary or audit history.
 - Indexes will be selected based on expected query patterns, including employee searches, salary effective-date lookups, and audit-history retrieval.
-- A seed script will generate approximately 10,000 synthetic employees and associated salary records when implemented. It is not in the repository yet. It must support repeatable execution without unintentionally creating duplicate records.
+- A development seed script exists at `backend/scripts/seed_dev_data.py`. Default `--count` is **1,000** employees. It uses `DATABASE_URL`, targets database name `acme_salary` only, and refuses `acme_test`. A 10,000-employee seed remains a product requirement, not the current default. Repeatable execution skips existing employee codes.
 - The detailed schema, constraints, index selection, deletion policies, and transaction boundaries are documented in `docs/database-design.md`.
 
 ## 10. Authentication and Authorization
@@ -367,14 +363,12 @@ The configured audit identity (`HR_MANAGER_IDENTITY`) is not proof of authentica
 6. `require_csrf_token` runs after authentication. It requires the `acme_csrf` cookie and the `X-CSRF-Token` header to match, and the token signature to bind to the authenticated session. Missing, mismatched, malformed, or cross-session tokens return 403 with a generic message. CSRF does not replace authentication.
 7. `POST /api/v1/employees` requires both an authenticated session and a valid CSRF token. Employee GET routes require a session only. `GET /health` is public.
 8. `POST /api/v1/auth/logout` requires a session and CSRF token. It sets `revoked_at` on the current session and clears both cookies only after revocation commits.
-
-There is no salary HTTP router yet. Future salary mutation routes should reuse `require_csrf_token`.
+9. The salaries router (`/api/v1/employees/...`) requires `require_authenticated_session` on all routes. `POST .../salaries` and `PATCH .../salaries/{salary_id}` also use `require_csrf_token`. Salary GET routes (history, as-of, `salary-corrections`) require a session only.
 
 ### 10.2 Still pending
 
-- React frontend that reads `acme_csrf` and sends `X-CSRF-Token`.
 - Production trusted origins and `SESSION_COOKIE_SECURE=true` on HTTPS.
-- Salary and analytics HTTP protection once those routes exist.
+- Analytics HTTP protection once those routes exist.
 
 ## 11. Testing Strategy
 
@@ -401,35 +395,38 @@ Test business logic independently, including:
 Test interactions between application components, including:
 
 - Database persistence and constraints.
-- Employee API endpoints (create, get, paginated list) and, when added, salary API endpoints.
+- Employee API endpoints (create, get, paginated list) and salary API endpoints (create, history, as-of, correction, correction history).
 - Pagination, filtering, and error handling.
 - Salary changes and historical record retrieval.
 - Future-dated salary changes.
 - Historical corrections and audit-log persistence.
 - Transaction rollback when an audit entry fails.
 - Duplicate effective-date rejection at the database level.
-- Analytics queries against persisted data.
-- Currency-specific analytics and employment-status filtering.
+- Analytics queries against persisted data (pending analytics implementation).
+- Currency-specific analytics and employment-status filtering (pending).
 - Preservation of salary and audit history.
 - Login, logout, session expiry/revocation, and CSRF cookie/header validation.
 - Trusted-origin rejection on login and protected-route 401s without a session.
 
 ### 11.3 Frontend Tests
 
-There is no frontend package yet. When it exists, test important user interactions, including:
+There is no Vitest or React Testing Library suite. `frontend/package.json` defines `lint` and `build` only.
+
+When frontend tests are added, cover important user interactions, including:
 
 - Form validation.
-- Employee search and pagination.
+- Employee pagination (and server-side search if added).
 - Salary history display.
 - Salary correction reason handling.
-- Analytics filters and results.
+- Correction history display.
+- Analytics filters and results (when analytics exists).
 - Loading, empty, and error states.
-- Tests should be deterministic, fast where practical, and independent of external services.
-- Integration tests will use a dedicated test database or isolated test environment. Tests must not depend on production data.
+
+Backend integration tests use `TEST_DATABASE_URL` (`acme_test`), not production data.
 
 ## 12. Proposed Repository Structure
 
-Current layout (no `frontend/` or `scripts/` packages, and no `repositories` layer):
+Current layout (no `repositories` layer):
 
 ```text
 acme-salary-management/
@@ -444,18 +441,17 @@ acme-salary-management/
 │   │   ├── services/
 │   │   └── main.py
 │   ├── migrations/
+│   ├── scripts/
+│   │   └── seed_dev_data.py
 │   └── tests/
 ├── docs/
-│   ├── requirements.md
-│   ├── architecture.md
-│   └── database-design.md
+├── frontend/
+│   └── src/
 ├── .env.example
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
-
-A React `frontend/` tree and seed `scripts/` may be added when those features are implemented. Do not add empty folders without a purpose.
 
 ## 13. Development Principles
 
@@ -480,9 +476,9 @@ The architecture is successful when:
 - Salary changes and audit entries are persisted atomically.
 - The configured HR Manager identity is recorded automatically in audit entries.
 - Monthly and annual salary records preserve their original values and pay frequencies, subject to authorized audited corrections.
-- Annualized salary calculations follow explicit business rules.
-- Salary comparisons respect currency restrictions.
-- Analytics handle reporting dates, employment status, and missing salaries consistently.
+- Annualized salary calculations follow explicit business rules (**analytics not implemented**).
+- Salary comparisons respect currency restrictions (**analytics not implemented**).
+- Analytics handle reporting dates, employment status, and missing salaries consistently (**pending**).
 - API handling, business logic, data access, and frontend responsibilities are separated.
 - Core business rules can be tested independently.
 - The application can be extended without unnecessary complexity.
@@ -498,10 +494,11 @@ Settled by the current implementation:
 
 Still open:
 
-1. Salary and analytics HTTP API contracts, employee search/filter, and remaining error-response conventions.
+1. Analytics HTTP API contracts, server-side employee search/filter, and employee update API.
 2. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`).
 3. Audit retention and administrative access policy.
 4. Whether future versions should support additional salary frequencies or currency conversion.
 5. Whether a future version should support bulk salary changes through a shared batch operation with individual audit entries for each affected employee.
+6. Growing the development seed from 1,000 to about 10,000 employees, and adding frontend automated tests.
 
 Bulk salary-change workflows are not part of the initial implementation scope. If introduced later, they should support safe retries, progress tracking, and manageable transaction sizes.

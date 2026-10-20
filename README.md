@@ -1,8 +1,8 @@
 # ACME Employee Salary Management System
 
-Web application for ACME’s HR Manager to maintain employee and salary records and analyze how the organization pays about 10,000 people across countries.
+Web application for ACME’s HR Manager to maintain employee and salary records and, when implemented, analyze how the organization pays about 10,000 people across countries.
 
-This repository is an Incubyte engineering assessment. The backend can create, fetch, and paginate employees behind session authentication; login, logout, and CSRF protection are in place. Salary creation, history, applicable-as-of lookup, and correction are available over HTTP. Analytics, the frontend, seeding, and deployment are not implemented yet.
+This repository is an Incubyte engineering assessment. Session login/logout, CSRF on mutations, employee create/list, salary create/history/as-of/correction, correction-history reads, a React UI for those workflows, and a **1,000-employee** development seed are in the repository. Compensation **analytics**, a **10,000-employee** seed, employee update and server-side search APIs, frontend automated tests, and deployment are **not** done. Intended scope vs current status: [`docs/requirements.md`](docs/requirements.md) section 9.
 
 ## Requirements
 
@@ -17,14 +17,15 @@ This repository is an Incubyte engineering assessment. The backend can create, f
 
 | Layer | Choice |
 |---|---|
-| UI | React and Vite (planned; not in the repository yet) |
+| UI | React 19, TypeScript, Vite 8 (`frontend/`) |
 | API | FastAPI, Pydantic |
 | Data | PostgreSQL, SQLAlchemy, Alembic |
 | Backend tests | pytest, FastAPI TestClient |
+| Frontend checks | ESLint, `tsc` (`npm run lint`, `npm run build`). No Vitest suite |
 
-Backend Python packages are listed in `requirements.txt`.
+Backend Python packages are listed in `requirements.txt`. Frontend packages are listed in `frontend/package.json`.
 
-## Current backend capabilities
+## Current capabilities
 
 Public:
 
@@ -41,14 +42,17 @@ Employee HTTP APIs require an authenticated session. Create also requires CSRF v
 - `GET /api/v1/employees/{employee_id}` — fetch by internal database id
 - `GET /api/v1/employees` — list with `limit` (default 50, max 100) and `offset` (default 0)
 
+There is no employee update API. List has no search query parameters.
+
 Salary HTTP (session required; create and correction also require CSRF):
 
 - `POST /api/v1/employees/{employee_id}/salaries` — create a salary (`amount` as a decimal string or integer). Duplicate employee + effective date returns 409.
 - `GET /api/v1/employees/{employee_id}/salaries` — salary history for that employee, newest `effective_from` first. Empty list if the employee has no salaries.
 - `GET /api/v1/employees/{employee_id}/salaries/as-of?date=YYYY-MM-DD` — salary effective on or before that date, or `null` if none applies.
-- `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing salary (nonblank `reason` required). Updates the same row and writes an UPDATE audit entry.
+- `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing salary (non-blank `reason` required). Updates the same row and writes an UPDATE audit entry. Keeping that row’s existing `effective_from` is allowed. Using another of the same employee’s dates returns 409.
+- `GET /api/v1/employees/{employee_id}/salary-corrections` — UPDATE audit history for that employee (newest `changed_at` first). CREATE audits are not included. GET does not require a CSRF header.
 
-Create/correct/applicable-salary lookup and audit logging exist in the salary service.
+Frontend (`frontend/`): login, logout, paginated directory (search/filter apply to the **current page** only), employee details, add salary, correct salary, salary history, and correction history. In development, Vite proxies `/api` to `http://127.0.0.1:8000`. The UI copies `acme_csrf` into `X-CSRF-Token` on POST/PATCH except login.
 
 ## Repository structure
 
@@ -57,34 +61,29 @@ acme-salary-management/
 ├── artifacts/
 ├── backend/
 │   ├── app/
-│   │   ├── api/
-│   │   ├── core/
-│   │   ├── db/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   └── main.py
 │   ├── migrations/
+│   ├── scripts/
+│   │   └── seed_dev_data.py
 │   ├── tests/
 │   ├── alembic.ini
 │   └── pytest.ini
 ├── docs/
+├── frontend/
 ├── .env.example
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
 
-There is no `frontend/` package yet.
-
 ## Prerequisites
 
 - Python 3.13 with the packages in `requirements.txt` (this repo uses a `.venv` at the project root)
+- Node.js for the frontend (`frontend/package.json`)
 - PostgreSQL, with two databases:
-  - `acme_salary` — application data
+  - `acme_salary` — application data and development seed
   - `acme_test` — automated tests only
 
-Copy `.env.example` to `.env` and replace the placeholders (database URLs, HR Manager username and password hash, session cookie settings, CSRF signing secret, and trusted login origins). Do not commit `.env`.
+Copy `.env.example` to `.env` and replace the placeholders (database URLs, HR Manager username and password hash, session cookie settings, CSRF signing secret, and trusted login origins). For local UI login, include the Vite origin (Vite’s default is `http://localhost:5173`) in `CSRF_TRUSTED_ORIGINS`. Do not commit `.env`.
 
 ```text
 DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_salary
@@ -95,9 +94,25 @@ TEST_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_test
 
 pytest reads `TEST_DATABASE_URL` from the process environment. A value only in `.env` is not enough.
 
+Apply application migrations to `acme_salary` before using the API or seed (Alembic from `backend/`, using application `DATABASE_URL`). This README does not record a specific migrate command output.
+
+## Local UI and API
+
+The FastAPI application object is `app.main:app` under `backend/`. The Vite proxy expects the API at `http://127.0.0.1:8000`. From `frontend/`, `npm run dev` starts the UI. Exact process-manager flags are not prescribed here.
+
+## Development seed
+
+From `backend/`, with `DATABASE_URL` pointing at `acme_salary`:
+
+```powershell
+..\.venv\Scripts\python.exe scripts\seed_dev_data.py
+```
+
+Default `--count` is 1000. The script refuses `acme_test` and any database name other than `acme_salary`.
+
 ## Running tests
 
-From PowerShell, in the current terminal session (use your real username and password, not these placeholders):
+Backend, from PowerShell (use your real username and password, not these placeholders):
 
 ```powershell
 $env:TEST_DATABASE_URL = "postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_test"
@@ -109,15 +124,22 @@ If `TEST_DATABASE_URL` is not set, `/health` still runs and passes. Employee per
 
 Do not run application migrations as part of pytest setup against `acme_salary`. Tests upgrade the **test** database only.
 
+Frontend checks, from `frontend/`:
+
+```powershell
+npm run lint
+npm run build
+```
+
 ## Project status
 
-**Phase:** Backend employee HTTP API and salary HTTP APIs (create, history, as-of, correction), with session authentication and CSRF on mutations.
+**Present:** Auth, employee create/list, salary HTTP (including correction and correction history), React workflows for those features, 1,000-employee development seed, backend pytest suite, frontend lint/build.
 
-Not done: employee update/search APIs; analytics; 10k seed; frontend; deployment; video demo.
+**Not done:** Employee update API; server-side search/filter; analytics API/UI; 10,000-employee seed; frontend automated tests; production deployment (`SESSION_COOKIE_SECURE`, real trusted origins); demo video.
 
 ## Development approach
 
-- Implement in small steps with tests beside each behavior.
+- Implement in small steps with tests beside backend behavior.
 - Keep HTTP, business rules, and data access separate.
 - Use a dedicated test database and roll back test data; do not point tests at `acme_salary`.
 - Review AI-generated code and validate it through tests.
@@ -126,6 +148,6 @@ Not done: employee update/search APIs; analytics; 10k seed; frontend; deployment
 ## Open decisions
 
 1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`)
-2. Analytics APIs and employee search/filter
+2. Analytics APIs and server-side employee search/filter and employee update
 3. Audit retention and administrative access policy
-4. UI component library
+4. UI component library and frontend automated tests

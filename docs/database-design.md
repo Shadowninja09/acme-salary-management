@@ -196,7 +196,7 @@ Foreign keys use `ON DELETE RESTRICT` (`fk_salary_records_employee_id`, `fk_sala
 
 ## 8. Compensation Analytics Rules
 
-The following reporting rules are intended for compensation analytics. There is no analytics query API yet. Salary applicability is implemented in the salary service (`get_applicable_salary`).
+The following reporting rules are intended for compensation analytics. There is no analytics query API yet. Salary applicability is implemented in the salary service (`get_applicable_salary`) and exposed as `GET /api/v1/employees/{employee_id}/salaries/as-of`. Correction history is a read of existing UPDATE rows in `salary_audit_logs` (`GET /api/v1/employees/{employee_id}/salary-corrections`); it does not add tables or migrations. That list joins `salary_audit_logs` to `salary_records` and can use index `ix_salary_audit_logs_salary_record_id`.
 
 The database supports the following reporting rules:
 
@@ -227,15 +227,12 @@ The initial database is designed for approximately 10,000 employees. Performance
 
 ## 10. Data Seeding
 
-A repeatable seed script is still planned. It is not in the repository yet. When added, it will generate approximately 10,000 synthetic employee records and associated salary records.
+`backend/scripts/seed_dev_data.py` seeds the **application** database. Default `--count` is **1,000** employees (not 10,000). It reads `DATABASE_URL`, requires database name `acme_salary`, and refuses `acme_test` / `TEST_DATABASE_URL`. It does not run migrations or insert sessions.
 
-Requirements:
-
-- Use synthetic data only.
-- Avoid real employee information.
-- Make repeated execution safe and prevent duplicate seed records.
-- Generate valid employee, salary, currency, frequency, and effective-date values.
-- Ensure seeded data supports testing of active and inactive employees, salary history, future-dated changes, and missing salary information.
+- Synthetic data only; no real employee information.
+- Repeated execution skips existing `employee_code` values.
+- Generates valid employee, salary, currency, frequency, and effective-date values, including mixed statuses and some future-dated or missing salaries depending on the generator.
+- A 10,000-employee seed remains the product requirement. It has not been run as a recorded benchmark (see `artifacts/performance.md`). URL-identity safety tests live in `backend/tests/test_seed_dev_data.py`.
 
 ## 11. Database Migrations
 
@@ -267,8 +264,9 @@ Database-related tests must cover:
 - Required update reasons.
 - Transaction rollback when audit creation fails.
 - Preservation of salary and audit history.
-- Safe, repeatable seed-script execution (pending; the script does not exist yet).
+- Seed target URL guards (`test_seed_dev_data.py`). Full 10,000-employee seed execution is still pending.
 - Compensation analytics for missing salaries, employment status, frequency, and currencies (pending HTTP/analytics implementation).
+- Correction-history listing of UPDATE audits, scoped by employee (`list_employee_salary_corrections`).
 - Session token hashing (raw token not persisted), expiry, and revocation.
 - CSRF binding to the authenticated session.
 
@@ -296,7 +294,7 @@ Settled by the current implementation:
 
 Still open:
 
-1. Salary and analytics HTTP API contracts, employee search/filter conventions, and remaining pagination details beyond the current employee `limit`/`offset` list.
+1. Analytics HTTP API contracts, server-side employee search/filter, and employee update API. Salary create/history/as-of/correction and correction-history HTTP already exist.
 2. Deployment target and production configuration (HTTPS, `SESSION_COOKIE_SECURE`, real trusted origins).
 3. Audit retention and administrative access policy.
 4. Whether future releases need additional pay frequencies, currency conversion, or bulk salary operations.

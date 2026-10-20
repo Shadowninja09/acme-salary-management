@@ -20,7 +20,7 @@ Access is backend-enforced session authentication for that single HR Manager, wi
 - Analyze compensation from persisted records: consistent currency, monthly amounts annualized by ×12, active employees by default, missing salaries counted separately (not treated as zero).
 - Seed about 10,000 synthetic employees and related salaries without using real personal data.
 
-This brief describes the intended first release. Current progress (what exists in the repository versus what is still pending) is recorded in [`requirements.md`](requirements.md) section 9.
+This brief describes the intended first release, including analytics and a seed of about 10,000 employees. Those remain **requirements**, not a claim that they are finished. Current repository progress (implemented versus pending) is recorded in [`requirements.md`](requirements.md) section 9.
 
 ## Deliberate exclusions
 

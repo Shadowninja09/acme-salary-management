@@ -181,7 +181,7 @@ The application will be considered functionally complete when:
 20. Login issues a session cookie and a session-bound CSRF cookie only after trusted-origin checks and successful credential verification. Logout requires a valid session and CSRF token, revokes the current session, and clears both cookies.
 21. Credentials, the CSRF signing secret, and trusted origins are supplied through configuration rather than committed source.
 
-These criteria describe the intended complete deliverable. Authentication, session persistence, CSRF protection, employee HTTP APIs, and salary persistence/services exist today; several criteria above are still pending (see section 9).
+These criteria describe the intended complete deliverable. Progress against them is recorded in section 9; several criteria remain pending.
 
 ## 8. Success Criteria
 
@@ -195,18 +195,26 @@ This section records progress against the requirements above. It does not replac
 
 **Implemented**
 
-- Employee persistence and HTTP APIs to create, fetch by id, and list employees with pagination (`limit`/`offset`). Protected by session authentication. Create also requires CSRF validation.
-- Salary persistence, create/correct services, applicable-salary lookup, and audit logging in the same database transaction as the salary change. There is no salary HTTP API yet.
+- Employee persistence and HTTP APIs to create, fetch by id, and list employees with pagination (`limit`/`offset`). Protected by session authentication. Create also requires CSRF validation. There is no employee update (PATCH/PUT) API.
+- Salary HTTP APIs (session required). Create and correction also require CSRF (`acme_csrf` cookie plus `X-CSRF-Token`):
+  - `POST /api/v1/employees/{employee_id}/salaries` — create a salary for a new effective date.
+  - `GET /api/v1/employees/{employee_id}/salaries` — salary history, newest `effective_from` first.
+  - `GET /api/v1/employees/{employee_id}/salaries/as-of?date=YYYY-MM-DD` — applicable salary on or before that date, or `null`.
+  - `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing row (non-blank reason). Updates the same record and writes an UPDATE audit entry. A correction that keeps that row’s existing `effective_from` succeeds. Moving the date onto another of the same employee’s dates returns 409. Automated tests cover both cases (`test_correct_salary_keeps_existing_effective_date`, `test_correct_salary_duplicate_effective_date_returns_409`).
+  - `GET /api/v1/employees/{employee_id}/salary-corrections` — UPDATE audit rows only (newest `changed_at` first). CREATE audits are not returned. No extra CSRF header.
+- Salary persistence, create/correct services, applicable-salary lookup, and audit logging in the same database transaction as the salary change.
+- React + TypeScript + Vite frontend: HR Manager login and logout; employee directory with pagination; client-side search/status filter on the **currently loaded page** (not a backend search API); employee details; add salary; correct salary; salary history; correction-history table. After a successful correction, the UI refreshes both lists and closes the correction form. The Vite dev server proxies `/api` to the FastAPI process so session cookies work locally.
 - One configured HR Manager: login and logout, opaque `acme_session` cookie (HttpOnly, SameSite=Lax, configured Secure and max-age), SHA-256 hashed sessions in `user_sessions`, expiry and revocation.
-- Session-bound CSRF cookie `acme_csrf` (readable by a future frontend) plus `X-CSRF-Token` header on state-changing authenticated requests. Trusted-origin validation on login.
+- Session-bound CSRF cookie `acme_csrf` (readable by JavaScript) plus `X-CSRF-Token` on state-changing authenticated requests. The frontend copies that cookie into the header for POST and PATCH except login. Trusted-origin validation on login.
+- Repeatable development seed (`backend/scripts/seed_dev_data.py`): default **1,000** synthetic employees on `acme_salary` only; refuses `acme_test`. Not a 10,000-employee seed.
 - Health check `GET /health` remains public.
-- Backend tests against a dedicated `TEST_DATABASE_URL` database, isolated with savepoints.
+- Backend tests against a dedicated `TEST_DATABASE_URL` database, isolated with savepoints. Frontend `npm run lint` and `npm run build` exist; there is no Vitest/React Testing Library suite.
 
 **Not yet implemented**
 
-- Employee update, search, and filter APIs.
-- Salary HTTP endpoints and frontend salary workflows.
+- Employee update API.
+- Server-side employee search and filter APIs (directory filtering is page-local).
 - Compensation analytics APIs and UI.
-- Repeatable ~10,000-employee seed script.
-- React frontend and frontend tests.
-- Deployment documentation beyond repository setup notes.
+- Repeatable ~10,000-employee seed (requirement remains; current default is 1,000).
+- Frontend automated tests.
+- Deployment, production `SESSION_COOKIE_SECURE` / trusted origins, and a recorded demo.
