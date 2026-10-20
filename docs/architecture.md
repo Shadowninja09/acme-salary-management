@@ -422,7 +422,7 @@ When frontend tests are added, cover important user interactions, including:
 - Analytics filters and results (when analytics exists).
 - Loading, empty, and error states.
 
-Backend integration tests use `TEST_DATABASE_URL` (`acme_test`), not production data.
+Backend integration tests derive a connection to `acme_test` from application `DATABASE_URL` (same driver, credentials, host, and port). Test migrations refuse any other database name and do not fall back to `acme_salary`. Ordinary Alembic and FastAPI keep using `DATABASE_URL`.
 
 ## 12. Proposed Repository Structure
 
@@ -488,7 +488,7 @@ The architecture is successful when:
 Settled by the current implementation:
 
 - Session authentication, CSRF double-submit, trusted-origin login checks, and configuration of secrets/origins.
-- `get_db` commit/rollback; tests against `TEST_DATABASE_URL` with savepoints.
+- `get_db` commit/rollback; tests against derived `acme_test` with savepoints.
 - Audit snapshots store `amount` (decimal string), `currency`, `pay_frequency`, and `effective_from` (ISO date).
 - Employee list pagination uses `limit` (1–100, default 50) and `offset`.
 

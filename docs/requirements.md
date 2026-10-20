@@ -208,7 +208,7 @@ This section records progress against the requirements above. It does not replac
 - Session-bound CSRF cookie `acme_csrf` (readable by JavaScript) plus `X-CSRF-Token` on state-changing authenticated requests. The frontend copies that cookie into the header for POST and PATCH except login. Trusted-origin validation on login.
 - Repeatable development seed (`backend/scripts/seed_dev_data.py`): default **1,000** synthetic employees on `acme_salary` only; refuses `acme_test`. Not a 10,000-employee seed.
 - Health check `GET /health` remains public.
-- Backend tests against a dedicated `TEST_DATABASE_URL` database, isolated with savepoints. Frontend `npm run lint` and `npm run build` exist; there is no Vitest/React Testing Library suite.
+- Backend tests against a dedicated `acme_test` database (URL derived from `DATABASE_URL` at pytest start), isolated with savepoints. Frontend `npm run lint` and `npm run build` exist; there is no Vitest/React Testing Library suite.
 
 **Not yet implemented**
 

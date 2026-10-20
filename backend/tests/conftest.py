@@ -2,6 +2,17 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
+from app.core.test_database import (
+    DatabaseTestConfigError,
+    assert_test_database_target,
+    configure_pytest_test_database_url,
+)
+
+try:
+    configure_pytest_test_database_url()
+except DatabaseTestConfigError:
+    os.environ.pop("TEST_DATABASE_URL", None)
+
 os.environ.setdefault(
     "DATABASE_URL",
     "postgresql+psycopg://pytest:pytest@127.0.0.1:1/acme_unused",
@@ -57,14 +68,24 @@ def client() -> TestClient:
 def test_database_url() -> str:
     url = os.environ.get("TEST_DATABASE_URL", "").strip()
     if not url:
-        pytest.skip(
-            "TEST_DATABASE_URL is not configured; skipping database integration tests"
+        pytest.fail(
+            "TEST_DATABASE_URL could not be derived from DATABASE_URL; "
+            "the application database will not be used"
         )
+    try:
+        assert_test_database_target(url)
+    except DatabaseTestConfigError as exc:
+        pytest.fail(str(exc))
     return url
 
 
 @pytest.fixture(scope="session")
 def migrated_test_engine(test_database_url: str) -> Generator[Engine, None, None]:
+    try:
+        assert_test_database_target(test_database_url)
+    except DatabaseTestConfigError as exc:
+        pytest.fail(str(exc))
+
     engine = create_engine(test_database_url)
     try:
         with engine.connect() as connection:

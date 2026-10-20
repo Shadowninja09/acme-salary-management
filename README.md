@@ -83,18 +83,15 @@ acme-salary-management/
   - `acme_salary` — application data and development seed
   - `acme_test` — automated tests only
 
-Copy `.env.example` to `.env` and replace the placeholders (database URLs, HR Manager username and password hash, session cookie settings, CSRF signing secret, and trusted login origins). For local UI login, include the Vite origin (Vite’s default is `http://localhost:5173`) in `CSRF_TRUSTED_ORIGINS`. Do not commit `.env`.
+Copy `.env.example` to `.env` and replace the placeholders (`DATABASE_URL`, HR Manager username and password hash, session cookie settings, CSRF signing secret, and trusted login origins). For local UI login, include the Vite origin (Vite’s default is `http://localhost:5173`) in `CSRF_TRUSTED_ORIGINS`. Do not commit `.env`.
 
 ```text
 DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_salary
-TEST_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_test
 ```
 
-**`TEST_DATABASE_URL` must point at `acme_test`, never at `acme_salary`.** Integration tests apply Alembic migrations to that URL and would otherwise change the application database.
+Create the `acme_test` database once (pytest does not create or drop databases). pytest derives the test URL from `DATABASE_URL` with SQLAlchemy `make_url()`, changing only the database name to `acme_test`. It refuses to run test migrations against any other name and does not fall back to `acme_salary`. `DATABASE_URL` may live in the process environment or in `.env` at the repo root or `backend/`.
 
-pytest reads `TEST_DATABASE_URL` from the process environment. A value only in `.env` is not enough.
-
-Apply application migrations to `acme_salary` before using the API or seed (Alembic from `backend/`, using application `DATABASE_URL`). This README does not record a specific migrate command output.
+Apply application migrations to `acme_salary` before using the API or seed (Alembic from `backend/`, using application `DATABASE_URL`). Ordinary Alembic does not use the pytest test URL. This README does not record a specific migrate command output.
 
 ## Local UI and API
 
@@ -112,15 +109,14 @@ Default `--count` is 1000. The script refuses `acme_test` and any database name 
 
 ## Running tests
 
-Backend, from PowerShell (use your real username and password, not these placeholders):
+Backend, from PowerShell (no need to export `TEST_DATABASE_URL`):
 
 ```powershell
-$env:TEST_DATABASE_URL = "postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_test"
 Set-Location backend
 ..\.venv\Scripts\python.exe -m pytest
 ```
 
-If `TEST_DATABASE_URL` is not set, `/health` still runs and passes. Employee persistence and API tests skip with: `TEST_DATABASE_URL is not configured; skipping database integration tests`.
+If `DATABASE_URL` is missing or the derived target is not exactly `acme_test`, integration tests fail rather than migrating the application database. `/health` does not need PostgreSQL.
 
 Do not run application migrations as part of pytest setup against `acme_salary`. Tests upgrade the **test** database only.
 

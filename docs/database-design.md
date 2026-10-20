@@ -270,7 +270,7 @@ Database-related tests must cover:
 - Session token hashing (raw token not persisted), expiry, and revocation.
 - CSRF binding to the authenticated session.
 
-Tests must be deterministic. Persistence tests use `TEST_DATABASE_URL` (dedicated `acme_test` database) and wrap each test in a connection-level transaction with savepoints so commits do not leak into other tests. Application `get_db` commits after a successful request. Login and logout use function-scoped sessions so the session row is committed before cookies are set or cleared.
+Tests must be deterministic. Persistence tests use a dedicated `acme_test` database. pytest derives that URL from `DATABASE_URL` (SQLAlchemy `make_url()`, database name only) and refuses to migrate any other database. Each test is wrapped in a connection-level transaction with savepoints so commits do not leak into other tests. Application `get_db` commits after a successful request. Login and logout use function-scoped sessions so the session row is committed before cookies are set or cleared. Create `acme_test` once; pytest does not CREATE or DROP databases.
 
 ## 13. Initial Scope and Future Extensions
 
@@ -290,7 +290,7 @@ These can be introduced through future migrations if business requirements chang
 Settled by the current implementation:
 
 - Single HR Manager authentication via opaque hashed sessions, cookies, CSRF, and trusted-origin login checks.
-- Persistence tests against `TEST_DATABASE_URL`; request-scoped commit in `get_db`.
+- Persistence tests against derived `acme_test`; request-scoped commit in `get_db`.
 
 Still open:
 

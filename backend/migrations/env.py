@@ -1,10 +1,9 @@
 from logging.config import fileConfig
-import os
 
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from app.core.config import get_settings
+from app.core.test_database import alembic_sqlalchemy_url
 from app.db.base import Base
 from app.models import Employee, SalaryAuditLog, SalaryRecord, UserSession  # noqa: F401
 
@@ -17,10 +16,7 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    test_database_url = os.environ.get("TEST_DATABASE_URL")
-    if test_database_url:
-        return test_database_url
-    return get_settings().database_url
+    return alembic_sqlalchemy_url()
 
 
 def run_migrations_offline() -> None:
