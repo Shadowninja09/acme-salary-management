@@ -1,8 +1,8 @@
 # ACME Employee Salary Management System
 
-Web application for ACME’s HR Manager to maintain employee and salary records and, when implemented, analyze how the organization pays about 10,000 people across countries.
+Web application for ACME’s HR Manager to maintain employee and salary records and analyze how the organization pays people across countries.
 
-This repository is an Incubyte engineering assessment. Session login/logout, CSRF on mutations, employee create/list, salary create/history/as-of/correction, correction-history reads, compensation analytics, a React UI for those workflows, and a **1,000-employee** development seed are in the repository. A **10,000-employee** seed, employee update and server-side search APIs, frontend automated tests, and deployment are **not** done. Intended scope vs current status: [`docs/requirements.md`](docs/requirements.md) section 9.
+This repository is an Incubyte engineering assessment. Session login/logout, CSRF on mutations, employee create/list (no update API), salary create/history/as-of/correction, UPDATE-only correction-history reads, compensation analytics (active employees; groups by currency and pay frequency), a React UI for those workflows, a **1,000-employee** local seed default, and a Vitest + React Testing Library suite (`npm test`, defined in `frontend/package.json`) are in the repository. Seeding the **demo** database with 10,000 employees, deployment, and a demo video are **release tasks**, not missing product APIs. Scope: [`docs/requirements.md`](docs/requirements.md) sections 9–10.
 
 ## Requirements
 
@@ -21,7 +21,7 @@ This repository is an Incubyte engineering assessment. Session login/logout, CSR
 | API | FastAPI, Pydantic |
 | Data | PostgreSQL, SQLAlchemy, Alembic |
 | Backend tests | pytest, FastAPI TestClient |
-| Frontend checks | ESLint, `tsc` (`npm run lint`, `npm run build`). No Vitest suite |
+| Frontend checks | ESLint, `tsc`, Vitest (`npm run lint`, `npm run build`, `npm test`) |
 
 Backend Python packages are listed in `requirements.txt`. Frontend packages are listed in `frontend/package.json`.
 
@@ -46,13 +46,13 @@ There is no employee update API. List has no search query parameters.
 
 Salary HTTP (session required; create and correction also require CSRF):
 
-- `POST /api/v1/employees/{employee_id}/salaries` — create a salary (`amount` as a decimal string or integer). Duplicate employee + effective date returns 409.
+- `POST /api/v1/employees/{employee_id}/salaries` — create a salary (`amount` as a decimal string or integer). Duplicate employee + effective date returns 409. An unsupported employee-country / salary-currency combination returns 422 (create always validates the combination).
 - `GET /api/v1/employees/{employee_id}/salaries` — salary history for that employee, newest `effective_from` first. Empty list if the employee has no salaries.
 - `GET /api/v1/employees/{employee_id}/salaries/as-of?date=YYYY-MM-DD` — salary effective on or before that date, or `null` if none applies.
-- `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing salary (non-blank `reason` required). Updates the same row and writes an UPDATE audit entry. Keeping that row’s existing `effective_from` is allowed. Using another of the same employee’s dates returns 409.
+- `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing salary (non-blank `reason` required). Updates the same row and writes an UPDATE audit entry. Keeping that row’s existing `effective_from` is allowed. Using another of the same employee’s dates returns 409. Changing to an unsupported country–currency combination returns 422; a correction may keep a legacy currency already stored on that row.
 - `GET /api/v1/employees/{employee_id}/salary-corrections` — UPDATE audit history for that employee (newest `changed_at` first). CREATE audits are not included. GET does not require a CSRF header.
 
-Frontend (`frontend/`): login, logout, paginated directory (search/filter apply to the **current page** only), employee details, add salary, correct salary, salary history, and correction history. In development, Vite proxies `/api` to `http://127.0.0.1:8000`. The UI copies `acme_csrf` into `X-CSRF-Token` on POST/PATCH except login.
+Frontend (`frontend/`): login, logout, paginated directory (**page-local** search/filter, labeled “Search this page”), employee details, add salary, correct salary, salary history, UPDATE-only correction history, and compensation analytics. Employee-detail current pay is computed from loaded history, not from the as-of endpoint. In development, Vite proxies `/api` to `http://127.0.0.1:8000`. The UI copies `acme_csrf` into `X-CSRF-Token` on POST/PATCH except login.
 
 ## Repository structure
 
@@ -91,11 +91,24 @@ DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/acme_salary
 
 Create the `acme_test` database once (pytest does not create or drop databases). pytest derives the test URL from `DATABASE_URL` with SQLAlchemy `make_url()`, changing only the database name to `acme_test`. It refuses to run test migrations against any other name and does not fall back to `acme_salary`. `DATABASE_URL` may live in the process environment or in `.env` at the repo root or `backend/`.
 
-Apply application migrations to `acme_salary` before using the API or seed (Alembic from `backend/`, using application `DATABASE_URL`). Ordinary Alembic does not use the pytest test URL. This README does not record a specific migrate command output.
+Apply application migrations to `acme_salary` before using the API or seed. From `backend/`, Alembic uses `alembic.ini` and `migrations/env.py` (application `DATABASE_URL`, not the pytest `acme_test` URL):
+
+```powershell
+Set-Location backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+```
+
+This README documents the project command; it does not record a successful run output.
 
 ## Local UI and API
 
-The FastAPI application object is `app.main:app` under `backend/`. The Vite proxy expects the API at `http://127.0.0.1:8000`. From `frontend/`, `npm run dev` starts the UI. Exact process-manager flags are not prescribed here.
+The FastAPI application object is `app.main:app` under `backend/`. The Vite proxy expects the API at `http://127.0.0.1:8000`. From `backend/`:
+
+```powershell
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+From `frontend/`, `npm run dev` starts the UI. The commands above match the configured ASGI app, Vite proxy, and `uvicorn` dependency; this README does not record a live process.
 
 ## Development seed
 
@@ -105,7 +118,7 @@ From `backend/`, with `DATABASE_URL` pointing at `acme_salary`:
 ..\.venv\Scripts\python.exe scripts\seed_dev_data.py
 ```
 
-Default `--count` is 1000. The script refuses `acme_test` and any database name other than `acme_salary`.
+Default `--count` is 1000. For the assessment/demo database use `--count 10000` (not claimed to have been run here). The script refuses `acme_test` and any database name other than `acme_salary`.
 
 ## Running tests
 
@@ -123,15 +136,20 @@ Do not run application migrations as part of pytest setup against `acme_salary`.
 Frontend checks, from `frontend/`:
 
 ```powershell
+npm test
 npm run lint
 npm run build
 ```
 
+`npm test` runs `vitest run` as defined in `frontend/package.json`. A working-tree run **before** commit `5625f7e` recorded **17 tests passed** across **6 files**. That count is not a rerun after the commit.
+
 ## Project status
 
-**Present:** Auth, employee create/list, salary HTTP (including correction and correction history), compensation analytics HTTP/UI, React workflows for those features, 1,000-employee development seed, backend pytest suite, frontend lint/build.
+**Present:** Auth, employee create/list APIs, salary HTTP (including correction, country–currency validation, and UPDATE-only correction history), compensation analytics HTTP/UI, React workflows for those features, 1,000-employee **local** seed default, backend pytest suite, and frontend Vitest (`npm test` in `frontend/package.json`).
 
-**Not done:** Employee update API; server-side search/filter; 10,000-employee seed; frontend automated tests; production deployment (`SESSION_COOKIE_SECURE`, real trusted origins); demo video. Include-inactive analytics filter and annualized/median views are also not on the current analytics endpoint.
+**Release tasks:** seed demo with 10,000 employees; production deployment (`SESSION_COOKIE_SECURE`, real trusted origins); demo video.
+
+**Deferred (not this submission):** employee-update API/UI, employee-create UI, dataset-wide search, include-inactive analytics, monthly ×12 annualization, median/pay-band/trend views. See [`docs/requirements.md`](docs/requirements.md) section 10.
 
 ## Development approach
 
@@ -144,6 +162,5 @@ npm run build
 ## Open decisions
 
 1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`)
-2. Analytics APIs and server-side employee search/filter and employee update
-3. Audit retention and administrative access policy
-4. UI component library and frontend automated tests
+2. Audit retention and administrative access policy
+3. Items listed as future enhancements in `docs/requirements.md` section 10

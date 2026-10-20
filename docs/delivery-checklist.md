@@ -9,7 +9,7 @@ Items stay unchecked until the work is actually done. Do not fill in URLs, dates
 - [x] Keep secrets out of git (`.env` is gitignored).
 - [ ] Apply migrations on the deployed database.
 - [ ] Seed about 10,000 synthetic employees on the deployed environment, or document why a smaller demo dataset is used.
-- [ ] Confirm the HR Manager can manage employees, record/correct salaries, and view analytics against stored data.
+- [ ] Confirm the HR Manager can use the paginated directory, open employee details, record or correct salaries, and view analytics against stored data (there is no employee-create or employee-update UI).
 - [ ] Record the public URL here when the app is running:
 
 ```text
@@ -19,9 +19,9 @@ Deployed URL: (not deployed yet)
 ## Video demonstration
 
 - [ ] Record a short walkthrough of the deployed (or otherwise reviewer-accessible) application.
-- [ ] Show employee search/list against a large dataset (pagination).
-- [ ] Show creating or updating a salary and that history/audit is visible.
-- [ ] Show analytics answering how the org pays people (reporting date, employment status, currency).
+- [ ] Show employee list against a large dataset (pagination). If search is shown, it is **page-local**, not dataset-wide.
+- [ ] Show creating or **correcting** a salary and that history / UPDATE audit is visible.
+- [ ] Show analytics answering how the org pays people (reporting date, **active** employees, currency **and** pay frequency kept separate).
 - [ ] Store or link the video in a way reviewers can open without extra credentials, and add the link here:
 
 ```text
@@ -30,14 +30,14 @@ Demo video: (not recorded yet)
 
 ## Repository submission
 
-Git history on `main` includes incremental commits from documentation through persistence, auth, salary HTTP, a 1,000-employee development seed, frontend workflows, and correction history (see `git log`). Deployment and a demo video are still pending, so this item stays unchecked until the full evolution through deploy is present.
+Git history on `main` includes incremental commits from documentation through persistence, auth, salary HTTP, a 1,000-employee development seed, frontend workflows, correction history, country–currency validation, HR UI and session handling, and Vitest coverage (see `git log`). Deployment and a demo video are still pending, so the “through deploy” item stays unchecked.
 
 - [ ] Incremental commits show how the solution evolved (docs → foundation → features → tests → seed → UI → deploy).
 - [ ] `artifacts/ai-usage.md` has real prompt/usage notes from development.
 - [ ] `artifacts/trade-offs.md` records decisions made during implementation.
 - [ ] `artifacts/performance.md` records measurements taken on seeded data (if any).
-- [ ] README matches the real stack, layout, and working commands (keep in sync with the repository; last aligned with salary HTTP, frontend, and 1,000-employee seed).
-- [ ] Tests covering core behavior are present and documented (backend pytest under `backend/tests/`; frontend lint/build only).
+- [ ] README matches the real stack, layout, and working commands (keep in sync with the repository).
+- [x] Tests covering core behavior are present in the repository (backend pytest under `backend/tests/`; frontend `npm test` / lint / build). This box does not claim deployment or that tests were re-run after the latest implementation commits.
 - [ ] Share the Git repository link by replying to the Incubyte assessment email.
 
 ```text

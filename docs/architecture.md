@@ -23,7 +23,7 @@ The initial release supports one configured HR Manager. The backend authenticate
 | Database | PostgreSQL | Persistent employee and salary data |
 | Backend testing | pytest | Unit and integration tests |
 | API testing | FastAPI TestClient | Test HTTP endpoints |
-| Frontend checks | ESLint and `tsc` (`npm run lint`, `npm run build`) | Lint and typecheck/build. Vitest / React Testing Library are **not** in the frontend package |
+| Frontend checks | ESLint, `tsc`, Vitest (`npm run lint`, `npm run build`, `npm test`) | Lint, typecheck/build, and a small React Testing Library suite |
 | Version control | Git | Track and review changes |
 
 ## 3. High-Level Architecture
@@ -122,13 +122,14 @@ The React application lives in `frontend/`. Implemented workflows:
 
 - HR Manager login and logout.
 - Employee directory with `limit`/`offset` pagination. Search and employment-status controls filter the **current page of API results**, not the full dataset (there is no search query on `GET /api/v1/employees`).
-- Employee details, salary history, add salary, and salary correction (reason required). After a successful correction, history and correction history refresh and the correction form closes.
-- Correction history table from `GET /api/v1/employees/{id}/salary-corrections` (UPDATE audits only). Displays `changed_at`, salary record id, old/new snapshots, reason, and `changed_by` from the API. The UI does not send `changed_by`.
-- Compensation analytics: reporting date, active headcount, employees with/without applicable salary, and salary groups overall, by department, and by country (currency and pay frequency shown on every group).
+- Employee details, salary history, add salary, and salary correction (reason required). After a successful correction, history and correction history refresh and the correction form closes. If that refresh fails after a successful POST or PATCH, the UI treats it as a refresh problem (stale lists), not as a failed write. “Current compensation” is derived in the client from the loaded history (latest `effective_from` on or before today’s local date), not from `GET .../salaries/as-of`.
+- Correction history table from `GET /api/v1/employees/{id}/salary-corrections` (**UPDATE** audits only; CREATE events are omitted). Displays `changed_at`, old/new snapshots, reason, and `changed_by` from the API. The UI does not send `changed_by`.
+- Compensation analytics: reporting date, **active** headcount, employees with/without applicable salary, and salary groups overall, by department, and by country (currency and pay frequency on every group). Include-inactive filtering is deferred.
+- Add-salary and correct-salary currency lists follow the country–currency application policy (see section 7.1). The backend still rejects unsupported combinations.
 
-The shared API client (`frontend/src/api/client.ts`) sends cookies on every request. For POST and PATCH other than login, it copies the `acme_csrf` cookie into `X-CSRF-Token` when that header is not already set. GET requests do not attach a CSRF header.
+The shared API client (`frontend/src/api/client.ts`) sends cookies on every request. For POST and PATCH other than login, it copies the `acme_csrf` cookie into `X-CSRF-Token` when that header is not already set. GET requests do not attach a CSRF header. On HTTP **401**, the client notifies `App` except for `POST /api/v1/auth/login`. `App` registers that handler on mount and clears it on unmount. HTTP **403** and network failures do not clear the session. A login **401** stays an invalid-credentials error.
 
-Frontend validation (for example salary amount format) improves usability but does not replace backend validation or access restrictions. There is no frontend unit/component test runner in `frontend/package.json`.
+Frontend validation (for example salary amount format) improves usability but does not replace backend validation or access restrictions. Frontend tests use Vitest and React Testing Library (`npm test` in `frontend/`).
 
 ## 6. Initial Domain Model
 
@@ -248,26 +249,42 @@ The following rules govern salary records and historical corrections:
 9. Changing a salary record's effective date must be validated against the uniqueness constraint.
 10. Salary records must reference an existing employee.
 11. Salary amounts must be positive and use a supported currency and pay frequency.
-12. Supported currencies are `INR`, `USD`, `GBP`, `EUR`, `CAD`, and `AUD`.
+12. Supported salary **schema** currencies are `INR`, `USD`, `GBP`, `EUR`, `CAD`, and `AUD`. An additional country–currency application policy (section 7.1) further restricts which of those codes may be written for a given employee country.
 13. Salary amounts must use fixed-precision decimal handling, and inputs with more than two decimal places must be rejected.
-14. Monthly salaries are normalized to annual equivalents by multiplying by 12. Annual salaries remain unchanged.
+14. Monthly and annual amounts stay in separate analytics groups. This submission does **not** annualize monthly pay by multiplying by 12.
 15. Salaries in different currencies must not be compared directly or combined into a single statistic without a defined currency conversion policy.
 16. Corrected salary values must be used in subsequent applicable-salary calculations, while audit history retains evidence of the correction.
 17. Audit history must not be modified or deleted through ordinary application operations.
 
 The effective-date lookup must use the latest applicable record rather than simply selecting the most recently created record.
 
+### 7.1 Country–currency application policy
+
+This policy is **application validation**, not a rule from the original Incubyte brief and not a database check constraint. It is the currently implemented allow-list, not a claim that all countries are supported.
+
+Country matching collapses surrounding whitespace and compares case-insensitively. Currency values are the schema codes.
+
+| Country | Permitted currency |
+|---|---|
+| India | INR |
+| United States | USD |
+| United Kingdom | GBP |
+| Canada | CAD |
+| Australia | AUD |
+| Germany | EUR |
+
+- Salary **create** requires the employee’s stored country to have a mapping and the requested currency to be that mapping’s code. Unknown countries have **no** policy; create is rejected.
+- Salary **correction** runs the same check when the currency **changes**. A correction may keep a **legacy** currency already on the row even if it is not in the current mapping.
+- Unsupported combinations return HTTP **422**. Employee country on create is not validated against this list.
+- The development seed generates salaries only from this mapping.
+
+The mapping is duplicated in `backend/app/services/country_currency.py` and `frontend/src/countryCurrency.ts`. Those copies can drift. Centralizing or sharing the policy can be considered later; this submission does not refactor it.
+
 ## 8. Compensation Analytics
 
-Compensation analytics are calculated from persisted employee and salary records via `GET /api/v1/analytics/compensation?date=YYYY-MM-DD` (authenticated). The current endpoint reports **active** employees only. An employment-status filter that includes inactive employees is not implemented.
+Compensation analytics are calculated from persisted employee and salary records via `GET /api/v1/analytics/compensation?date=YYYY-MM-DD` (authenticated). The endpoint reports **active** employees only. Include-inactive filtering is **deferred** (not an API option).
 
-The backend will support questions such as:
-
-- Employee headcount by country and department.
-- Average, median, minimum, and maximum annual salary for a selected group.
-- Departments with the highest average salary within a country.
-- Salary changes over a selected period.
-- Employee counts within annual salary ranges.
+The implemented endpoint answers: active headcount; how many of those have an applicable salary; and average, minimum, and maximum **within each currency and pay-frequency group** (also split by department and country). Median, pay-band, trend, and annualized-total questions are **not** implemented.
 
 Analytics must be calculated from stored records using explicit business rules, not hardcoded results.
 
@@ -284,11 +301,11 @@ The initial version supports the following currencies:
 | `CAD` | Canadian Dollar |
 | `AUD` | Australian Dollar |
 
-Currency codes will be validated against this supported list.
+Currency codes are validated against this schema list. Salary writes are further limited by the country–currency application policy in section 7.1.
 
 Salary amounts will remain in their original currencies. Currency conversion is out of scope for the initial version.
 
-Compensation analytics must calculate statistics separately for each currency. Results must identify the currency used, and values from different currencies must not be combined into a single average, median, minimum, maximum, or salary-range calculation.
+Compensation analytics calculate statistics separately for each currency **and** pay frequency. Results identify those dimensions. Values from different currencies or frequencies must not be combined.
 
 ### 8.2 Salary Standardization
 
@@ -303,7 +320,7 @@ Analytics will use a reporting date to determine which salary record applies to 
 - The UI default reporting date is the current local date; the API requires `date`.
 - Users may select another reporting date for historical salary analysis.
 - Current active headcount counts employees whose current employment status is `ACTIVE`.
-- Analytics include active employees only. Including inactive employees is not an API option yet.
+- Analytics include active employees only. Include-inactive filtering is deferred (not an API option).
 - Active headcount is displayed separately from the with-salary and without-salary counts.
 - Salary calculations include only active employees who have an applicable salary record on the reporting date.
 - Employees without an applicable salary record are excluded from salary calculations and counted separately.
@@ -334,8 +351,8 @@ The design will use:
 - Database-level filtering and pagination for employee listings.
 - Database constraints and application validation to protect data integrity.
 - Employees should ordinarily be deactivated rather than deleted. Salary records must not be deleted through ordinary application operations, and audit history must be preserved. Foreign-key deletion policies must prevent cascading deletion from destroying salary or audit history.
-- Indexes will be selected based on expected query patterns, including employee searches, salary effective-date lookups, and audit-history retrieval.
-- A development seed script exists at `backend/scripts/seed_dev_data.py`. Default `--count` is **1,000** employees. It uses `DATABASE_URL`, targets database name `acme_salary` only, and refuses `acme_test`. A 10,000-employee seed remains a product requirement, not the current default. Repeatable execution skips existing employee codes.
+- Indexes follow actual query patterns: paginated employee lists (`limit`/`offset`), salary history and as-of lookups by employee and `effective_from`, and audit-history retrieval. Directory text search is page-local in the UI and is not a database search API.
+- A development seed script exists at `backend/scripts/seed_dev_data.py`. Default `--count` is **1,000** employees. It uses `DATABASE_URL`, targets database name `acme_salary` only, and refuses `acme_test`. Repeatable execution skips existing employee codes. The assessment/demo environment is intended to use `--count 10000`; that run is a release task, not the local default.
 - The detailed schema, constraints, index selection, deletion policies, and transaction boundaries are documented in `docs/database-design.md`.
 
 ## 10. Authentication and Authorization
@@ -355,11 +372,11 @@ The configured audit identity (`HR_MANAGER_IDENTITY`) is not proof of authentica
 7. `POST /api/v1/employees` requires both an authenticated session and a valid CSRF token. Employee GET routes require a session only. `GET /health` is public.
 8. `POST /api/v1/auth/logout` requires a session and CSRF token. It sets `revoked_at` on the current session and clears both cookies only after revocation commits.
 9. The salaries router (`/api/v1/employees/...`) requires `require_authenticated_session` on all routes. `POST .../salaries` and `PATCH .../salaries/{salary_id}` also use `require_csrf_token`. Salary GET routes (history, as-of, `salary-corrections`) require a session only.
+10. `GET /api/v1/analytics/compensation` uses `require_authenticated_session` on the analytics router. GET does not require a CSRF header.
 
 ### 10.2 Still pending
 
 - Production trusted origins and `SESSION_COOKIE_SECURE=true` on HTTPS.
-- Analytics HTTP protection once those routes exist.
 
 ## 11. Testing Strategy
 
@@ -400,17 +417,7 @@ Test interactions between application components, including:
 
 ### 11.3 Frontend Tests
 
-There is no Vitest or React Testing Library suite. `frontend/package.json` defines `lint` and `build` only.
-
-When frontend tests are added, cover important user interactions, including:
-
-- Form validation.
-- Employee pagination (and server-side search if added).
-- Salary history display.
-- Salary correction reason handling.
-- Correction history display.
-- Analytics reporting date, summaries, and empty/error states (no frontend test runner yet).
-- Loading, empty, and error states.
+`frontend/package.json` defines `test` (`vitest run`), `lint`, and `build`. The suite covers login success/failure, CSRF header wiring on a state-changing salary POST (and login without CSRF), analytics empty/error states, `EmployeeDetail` write-versus-refresh behavior, `App` 401 / 403 / network-failure / logout-401 behavior, and API-client unauthorized-listener tests. It does not cover the full UI.
 
 Backend integration tests derive a connection to `acme_test` from application `DATABASE_URL` (same driver, credentials, host, and port). Test migrations refuse any other database name and do not fall back to `acme_salary`. Ordinary Alembic and FastAPI keep using `DATABASE_URL`.
 
@@ -481,13 +488,11 @@ Settled by the current implementation:
 - Audit snapshots store `amount` (decimal string), `currency`, `pay_frequency`, and `effective_from` (ISO date).
 - Employee list pagination uses `limit` (1–100, default 50) and `offset`.
 
-Still open:
+Still open (release or future, not current product gaps):
 
-1. Server-side employee search/filter, employee update API, optional inactive-employee analytics filter, and annualized/median salary views.
-2. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`).
-3. Audit retention and administrative access policy.
-4. Whether future versions should support additional salary frequencies or currency conversion.
-5. Whether a future version should support bulk salary changes through a shared batch operation with individual audit entries for each affected employee.
-6. Growing the development seed from 1,000 to about 10,000 employees, and adding frontend automated tests.
+1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`).
+2. Audit retention and administrative access policy.
+3. Whether a later version should add dataset-wide search, employee update, include-inactive analytics, as-of in the current-pay UI, medians/bands/trends, extra salary frequencies, or currency conversion (`docs/requirements.md` section 10).
+4. Seeding the assessment/demo database with `--count 10000` (script already supports it; local default remains 1,000).
 
-Bulk salary-change workflows are not part of the initial implementation scope. If introduced later, they should support safe retries, progress tracking, and manageable transaction sizes.
+Bulk salary-change workflows are not part of this submission. If introduced later, they should support safe retries, progress tracking, and manageable transaction sizes.

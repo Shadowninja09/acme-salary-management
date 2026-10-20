@@ -11,7 +11,7 @@ The assessment target is about **10,000** employees. The development seed (`back
 - Applicable-salary lookup (`GET .../salaries/as-of`) for a reporting date
 - Correction-history list (`GET .../salary-corrections`) for an employee with many UPDATE audits
 - Session lookup by `token_hash`
-- One analytics query (headcount and annualized stats in a single currency) over realistic seeded data — **after** analytics exists
+- One analytics query (active headcount and grouped min/avg/max by currency and pay frequency) over a 10,000-row seed — **after** that seed is actually run
 
 ## Log
 
