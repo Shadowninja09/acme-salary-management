@@ -90,6 +90,48 @@ def test_get_employee_by_id(authenticated_client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["id"] == employee_id
     assert response.json()["employee_code"] == "EMP-000001"
+    assert response.json()["employment_status"] == "ACTIVE"
+
+
+def test_inactive_employee_is_returned_by_id_and_included_in_list(
+    authenticated_client: TestClient,
+) -> None:
+    active = authenticated_client.post("/api/v1/employees", json=EMPLOYEE_PAYLOAD)
+    inactive = authenticated_client.post(
+        "/api/v1/employees",
+        json={
+            **EMPLOYEE_PAYLOAD,
+            "employee_code": "EMP-000002",
+            "full_name": "Grace Hopper",
+            "employment_status": "INACTIVE",
+        },
+    )
+
+    assert active.status_code == 201
+    assert inactive.status_code == 201
+    assert active.json()["employment_status"] == "ACTIVE"
+    assert inactive.json()["employment_status"] == "INACTIVE"
+
+    inactive_id = inactive.json()["id"]
+    fetched = authenticated_client.get(f"/api/v1/employees/{inactive_id}")
+
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == inactive_id
+    assert fetched.json()["employee_code"] == "EMP-000002"
+    assert fetched.json()["employment_status"] == "INACTIVE"
+
+    listed = authenticated_client.get("/api/v1/employees")
+
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["total"] == 2
+    statuses = {
+        item["employee_code"]: item["employment_status"] for item in body["items"]
+    }
+    assert statuses == {
+        "EMP-000001": "ACTIVE",
+        "EMP-000002": "INACTIVE",
+    }
 
 
 def test_get_missing_employee_returns_404(authenticated_client: TestClient) -> None:

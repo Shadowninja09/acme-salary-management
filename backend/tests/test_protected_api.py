@@ -16,10 +16,39 @@ EMPLOYEE_PAYLOAD = {
     "employment_status": "ACTIVE",
 }
 
+SALARY_PAYLOAD = {
+    "amount": "1234.56",
+    "currency": "GBP",
+    "pay_frequency": "MONTHLY",
+    "effective_from": "2026-01-01",
+}
+
+CORRECTION_PAYLOAD = {
+    "amount": "2000.00",
+    "currency": "GBP",
+    "pay_frequency": "ANNUAL",
+    "effective_from": "2026-02-01",
+    "reason": "Corrected recorded amount",
+}
+
 _PROTECTED_REQUESTS = (
     ("POST", "/api/v1/employees", {"json": EMPLOYEE_PAYLOAD}),
     ("GET", "/api/v1/employees", {"params": {"limit": 1, "offset": 0}}),
     ("GET", "/api/v1/employees/1", {}),
+    ("GET", "/api/v1/employees/1/salaries", {}),
+    (
+        "GET",
+        "/api/v1/employees/1/salaries/as-of",
+        {"params": {"date": "2026-06-15"}},
+    ),
+    ("POST", "/api/v1/employees/1/salaries", {"json": SALARY_PAYLOAD}),
+    ("PATCH", "/api/v1/employees/1/salaries/1", {"json": CORRECTION_PAYLOAD}),
+    ("GET", "/api/v1/employees/1/salary-corrections", {}),
+    (
+        "GET",
+        "/api/v1/analytics/compensation",
+        {"params": {"date": "2026-06-15"}},
+    ),
 )
 
 
@@ -39,7 +68,7 @@ def _assert_unauthenticated(response, *secrets: str) -> None:
 
 
 @pytest.mark.parametrize("method,path,kwargs", _PROTECTED_REQUESTS)
-def test_unauthenticated_employee_routes_return_401(
+def test_unauthenticated_protected_routes_return_401(
     api_client: TestClient,
     method: str,
     path: str,
@@ -49,7 +78,7 @@ def test_unauthenticated_employee_routes_return_401(
 
 
 @pytest.mark.parametrize("method,path,kwargs", _PROTECTED_REQUESTS)
-def test_unknown_session_cannot_access_employee_routes(
+def test_unknown_session_cannot_access_protected_routes(
     api_client: TestClient,
     method: str,
     path: str,
@@ -61,7 +90,7 @@ def test_unknown_session_cannot_access_employee_routes(
 
 
 @pytest.mark.parametrize("method,path,kwargs", _PROTECTED_REQUESTS)
-def test_expired_session_cannot_access_employee_routes(
+def test_expired_session_cannot_access_protected_routes(
     api_client: TestClient,
     db_session: Session,
     method: str,
@@ -82,7 +111,7 @@ def test_expired_session_cannot_access_employee_routes(
 
 
 @pytest.mark.parametrize("method,path,kwargs", _PROTECTED_REQUESTS)
-def test_revoked_session_cannot_access_employee_routes(
+def test_revoked_session_cannot_access_protected_routes(
     api_client: TestClient,
     db_session: Session,
     method: str,
