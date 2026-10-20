@@ -202,8 +202,9 @@ This section records progress against the requirements above. It does not replac
   - `GET /api/v1/employees/{employee_id}/salaries/as-of?date=YYYY-MM-DD` — applicable salary on or before that date, or `null`.
   - `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing row (non-blank reason). Updates the same record and writes an UPDATE audit entry. A correction that keeps that row’s existing `effective_from` succeeds. Moving the date onto another of the same employee’s dates returns 409. Automated tests cover both cases (`test_correct_salary_keeps_existing_effective_date`, `test_correct_salary_duplicate_effective_date_returns_409`).
   - `GET /api/v1/employees/{employee_id}/salary-corrections` — UPDATE audit rows only (newest `changed_at` first). CREATE audits are not returned. No extra CSRF header.
-- Salary persistence, create/correct services, applicable-salary lookup, and audit logging in the same database transaction as the salary change.
-- React + TypeScript + Vite frontend: HR Manager login and logout; employee directory with pagination; client-side search/status filter on the **currently loaded page** (not a backend search API); employee details; add salary; correct salary; salary history; correction-history table. After a successful correction, the UI refreshes both lists and closes the correction form. The Vite dev server proxies `/api` to the FastAPI process so session cookies work locally.
+  - `GET /api/v1/analytics/compensation?date=YYYY-MM-DD` — active-employee compensation analytics (session required; GET has no CSRF header). Groups by currency and pay frequency; department and country breakdowns keep those dimensions. Does not convert currency or mix monthly with annual amounts.
+- Salary persistence, create/correct services, applicable-salary lookup, audit logging in the same database transaction as the salary change, and compensation analytics aggregation.
+- React + TypeScript + Vite frontend: HR Manager login and logout; employee directory with pagination; client-side search/status filter on the **currently loaded page** (not a backend search API); employee details; add salary; correct salary; salary history; correction-history table; compensation analytics (reporting date, headcount, salary groups). After a successful correction, the UI refreshes both lists and closes the correction form. The Vite dev server proxies `/api` to the FastAPI process so session cookies work locally.
 - One configured HR Manager: login and logout, opaque `acme_session` cookie (HttpOnly, SameSite=Lax, configured Secure and max-age), SHA-256 hashed sessions in `user_sessions`, expiry and revocation.
 - Session-bound CSRF cookie `acme_csrf` (readable by JavaScript) plus `X-CSRF-Token` on state-changing authenticated requests. The frontend copies that cookie into the header for POST and PATCH except login. Trusted-origin validation on login.
 - Repeatable development seed (`backend/scripts/seed_dev_data.py`): default **1,000** synthetic employees on `acme_salary` only; refuses `acme_test`. Not a 10,000-employee seed.
@@ -214,7 +215,7 @@ This section records progress against the requirements above. It does not replac
 
 - Employee update API.
 - Server-side employee search and filter APIs (directory filtering is page-local).
-- Compensation analytics APIs and UI.
 - Repeatable ~10,000-employee seed (requirement remains; current default is 1,000).
+- Analytics options from the original spec that this endpoint does not implement: include-inactive filter, monthly-to-annual normalization, median, and salary-range bands.
 - Frontend automated tests.
 - Deployment, production `SESSION_COOKIE_SECURE` / trusted origins, and a recorded demo.

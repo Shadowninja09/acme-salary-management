@@ -28,7 +28,7 @@ The initial release supports one configured HR Manager. The backend authenticate
 
 ## 3. High-Level Architecture
 
-The application follows a client-server architecture. The FastAPI backend, PostgreSQL schema, and React frontend are in the repository. Compensation **analytics** HTTP and UI are not implemented.
+The application follows a client-server architecture. The FastAPI backend, PostgreSQL schema, and React frontend are in the repository. Compensation analytics is implemented as `GET /api/v1/analytics/compensation` and a reporting-date UI.
 
 ```text
 +----------------------------------+
@@ -38,7 +38,7 @@ The application follows a client-server architecture. The FastAPI backend, Postg
 | Employee Directory (paginated)   |
 | Salary History, Add, Correct     |
 | Correction History               |
-| Analytics (not implemented)      |
+| Compensation analytics           |
 +----------------+-----------------+
                  |
                  | HTTP / JSON (Vite proxies /api in development)
@@ -91,8 +91,8 @@ Responsibilities:
 - Implement employee and salary management use cases.
 - Enforce salary-history and effective-date rules.
 - Determine the applicable salary for a specified date.
-- Normalize monthly and annual salaries for analytics **when analytics is implemented**.
-- Apply employment-status, reporting-date, and currency rules to analytics **when analytics is implemented**.
+- Calculate compensation analytics for a reporting date: latest applicable salary per active employee, grouped by currency and pay frequency (no conversion, no mixing of monthly and annual amounts).
+- Apply employment-status (active employees only), reporting-date, and currency grouping rules to analytics.
 - Coordinate operations involving multiple database records.
 - Ensure salary changes and their corresponding audit entries are persisted atomically.
 - Ensure salary corrections retain their before-and-after values and reason.
@@ -124,8 +124,7 @@ The React application lives in `frontend/`. Implemented workflows:
 - Employee directory with `limit`/`offset` pagination. Search and employment-status controls filter the **current page of API results**, not the full dataset (there is no search query on `GET /api/v1/employees`).
 - Employee details, salary history, add salary, and salary correction (reason required). After a successful correction, history and correction history refresh and the correction form closes.
 - Correction history table from `GET /api/v1/employees/{id}/salary-corrections` (UPDATE audits only). Displays `changed_at`, salary record id, old/new snapshots, reason, and `changed_by` from the API. The UI does not send `changed_by`.
-
-Compensation analytics views are **not** implemented.
+- Compensation analytics: reporting date, active headcount, employees with/without applicable salary, and salary groups overall, by department, and by country (currency and pay frequency shown on every group).
 
 The shared API client (`frontend/src/api/client.ts`) sends cookies on every request. For POST and PATCH other than login, it copies the `acme_csrf` cookie into `X-CSRF-Token` when that header is not already set. GET requests do not attach a CSRF header.
 
@@ -260,7 +259,7 @@ The effective-date lookup must use the latest applicable record rather than simp
 
 ## 8. Compensation Analytics
 
-Compensation analytics will be calculated using persisted employee and salary records. There is no analytics HTTP API yet; the rules below remain the intended behavior.
+Compensation analytics are calculated from persisted employee and salary records via `GET /api/v1/analytics/compensation?date=YYYY-MM-DD` (authenticated). The current endpoint reports **active** employees only. An employment-status filter that includes inactive employees is not implemented.
 
 The backend will support questions such as:
 
@@ -295,32 +294,24 @@ Compensation analytics must calculate statistics separately for each currency. R
 
 Salary records will preserve their original amounts and pay frequencies. The initial version supports monthly and annual salaries.
 
-For analytics:
-
-- Monthly salaries will be normalized to annual equivalents by multiplying by 12.
-- Annual salaries will remain unchanged.
-- Normalized annual values will be used for averages, medians, minimums, maximums, and salary-range queries.
-- Salary-range boundaries and calculations must use the same currency and annualized units.
-
-Hourly salaries and conversions requiring working-hours assumptions are out of scope.
+The implemented analytics endpoint does **not** annualize monthly salaries or mix pay frequencies. Average, minimum, and maximum are computed within each `(currency, pay_frequency)` group. Salary-range and median queries are not implemented. Hourly salaries remain out of scope.
 
 ### 8.3 Reporting Rules
 
 Analytics will use a reporting date to determine which salary record applies to each employee.
 
-- The default reporting date is the current date.
+- The UI default reporting date is the current local date; the API requires `date`.
 - Users may select another reporting date for historical salary analysis.
 - Current active headcount counts employees whose current employment status is `ACTIVE`.
-- Analytics include active employees by default.
-- The HR Manager may choose to include inactive employees in salary analytics.
-- Active headcount must always be displayed separately, regardless of the selected employment-status filter.
-- Salary calculations include only employees who satisfy the selected status filter and have an applicable salary record on the reporting date.
+- Analytics include active employees only. Including inactive employees is not an API option yet.
+- Active headcount is displayed separately from the with-salary and without-salary counts.
+- Salary calculations include only active employees who have an applicable salary record on the reporting date.
 - Employees without an applicable salary record are excluded from salary calculations and counted separately.
 - Missing salary records must not be treated as zero.
 - Future-dated salary records must not affect calculations for reporting dates before their effective dates.
-- Salary calculations must be performed separately for each currency.
+- Salary calculations are performed separately for each currency **and** pay frequency.
 - The initial version stores current employment status rather than employment-status history. Historical salary queries will use the salary applicable on the requested date but will not reconstruct an employee's historical employment status.
-- The reporting date, selected employment-status filter, currency, and other applicable criteria must be explicit in analytics requests and results.
+- The reporting date, currency, and pay frequency are explicit in analytics results.
 
 ## 9. Database and Migrations
 
@@ -385,9 +376,8 @@ Test business logic independently, including:
 - Audit snapshot generation.
 - Currency and pay-frequency validation.
 - Decimal precision validation.
-- Monthly-to-annual salary normalization.
-- Compensation analytics calculations.
-- Employment-status filters and active headcount.
+- Compensation analytics calculations (active employees; groups by currency and pay frequency).
+- Active headcount versus employees with or without applicable salary.
 - Missing salary records and reporting-date edge cases.
 
 ### 11.2 Integration Tests
@@ -395,15 +385,15 @@ Test business logic independently, including:
 Test interactions between application components, including:
 
 - Database persistence and constraints.
-- Employee API endpoints (create, get, paginated list) and salary API endpoints (create, history, as-of, correction, correction history).
+- Employee API endpoints (create, get, paginated list), salary API endpoints (create, history, as-of, correction, correction history), and compensation analytics.
 - Pagination, filtering, and error handling.
 - Salary changes and historical record retrieval.
 - Future-dated salary changes.
 - Historical corrections and audit-log persistence.
 - Transaction rollback when an audit entry fails.
 - Duplicate effective-date rejection at the database level.
-- Analytics queries against persisted data (pending analytics implementation).
-- Currency-specific analytics and employment-status filtering (pending).
+- Analytics queries against persisted data (`test_analytics_api.py`).
+- Currency-specific and pay-frequency-specific analytics grouping.
 - Preservation of salary and audit history.
 - Login, logout, session expiry/revocation, and CSRF cookie/header validation.
 - Trusted-origin rejection on login and protected-route 401s without a session.
@@ -419,7 +409,7 @@ When frontend tests are added, cover important user interactions, including:
 - Salary history display.
 - Salary correction reason handling.
 - Correction history display.
-- Analytics filters and results (when analytics exists).
+- Analytics reporting date, summaries, and empty/error states (no frontend test runner yet).
 - Loading, empty, and error states.
 
 Backend integration tests derive a connection to `acme_test` from application `DATABASE_URL` (same driver, credentials, host, and port). Test migrations refuse any other database name and do not fall back to `acme_salary`. Ordinary Alembic and FastAPI keep using `DATABASE_URL`.
@@ -476,9 +466,8 @@ The architecture is successful when:
 - Salary changes and audit entries are persisted atomically.
 - The configured HR Manager identity is recorded automatically in audit entries.
 - Monthly and annual salary records preserve their original values and pay frequencies, subject to authorized audited corrections.
-- Annualized salary calculations follow explicit business rules (**analytics not implemented**).
-- Salary comparisons respect currency restrictions (**analytics not implemented**).
-- Analytics handle reporting dates, employment status, and missing salaries consistently (**pending**).
+- Salary comparisons respect currency and pay-frequency grouping (no conversion, no mixing monthly with annual).
+- Analytics handle reporting dates, active employment status, and missing salaries consistently.
 - API handling, business logic, data access, and frontend responsibilities are separated.
 - Core business rules can be tested independently.
 - The application can be extended without unnecessary complexity.
@@ -494,7 +483,7 @@ Settled by the current implementation:
 
 Still open:
 
-1. Analytics HTTP API contracts, server-side employee search/filter, and employee update API.
+1. Server-side employee search/filter, employee update API, optional inactive-employee analytics filter, and annualized/median salary views.
 2. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`).
 3. Audit retention and administrative access policy.
 4. Whether future versions should support additional salary frequencies or currency conversion.

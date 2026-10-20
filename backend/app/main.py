@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 
+from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
 from app.api.employees import router as employees_router
 from app.api.salaries import router as salaries_router
@@ -13,6 +14,7 @@ app = FastAPI(title="ACME Employee Salary Management System", docs_url=None)
 app.include_router(auth_router)
 app.include_router(employees_router)
 app.include_router(salaries_router)
+app.include_router(analytics_router)
 
 
 def swagger_csrf_request_interceptor_js() -> str:

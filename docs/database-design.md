@@ -196,16 +196,14 @@ Foreign keys use `ON DELETE RESTRICT` (`fk_salary_records_employee_id`, `fk_sala
 
 ## 8. Compensation Analytics Rules
 
-The following reporting rules are intended for compensation analytics. There is no analytics query API yet. Salary applicability is implemented in the salary service (`get_applicable_salary`) and exposed as `GET /api/v1/employees/{employee_id}/salaries/as-of`. Correction history is a read of existing UPDATE rows in `salary_audit_logs` (`GET /api/v1/employees/{employee_id}/salary-corrections`); it does not add tables or migrations. That list joins `salary_audit_logs` to `salary_records` and can use index `ix_salary_audit_logs_salary_record_id`.
+`GET /api/v1/analytics/compensation?date=YYYY-MM-DD` aggregates from `employees` and `salary_records`. Applicable salary uses a window function: latest `effective_from` on or before the reporting date, tie-break `id` descending (unique `(employee_id, effective_from)` still applies). Per-employee as-of lookup remains `get_applicable_salary` / `GET .../salaries/as-of`. Correction history is unchanged.
 
-The database supports the following reporting rules:
+Implemented reporting rules:
 
-- Active employees are included by default.
-- Reports may include inactive employees when requested.
+- Active employees only (`employment_status = ACTIVE`). Inactive employees are excluded; there is no include-inactive query parameter.
 - Active headcount is reported separately from the number of employees with applicable salary data.
 - Employees without an applicable salary are counted separately and excluded from salary statistics.
-- Monthly salaries are annualized by multiplying by 12.
-- Annual salaries are used without frequency conversion.
+- Monthly and annual amounts are **not** combined and are **not** annualized. Groups always include `currency` and `pay_frequency`.
 - Salaries in different currencies are analyzed separately.
 - Currency conversion is outside the initial scope.
 - Reports use the salary record applicable on the requested reporting date.
@@ -265,7 +263,7 @@ Database-related tests must cover:
 - Transaction rollback when audit creation fails.
 - Preservation of salary and audit history.
 - Seed target URL guards (`test_seed_dev_data.py`). Full 10,000-employee seed execution is still pending.
-- Compensation analytics for missing salaries, employment status, frequency, and currencies (pending HTTP/analytics implementation).
+- Compensation analytics for missing salaries, active employment status, frequency, and currencies (`GET /api/v1/analytics/compensation`).
 - Correction-history listing of UPDATE audits, scoped by employee (`list_employee_salary_corrections`).
 - Session token hashing (raw token not persisted), expiry, and revocation.
 - CSRF binding to the authenticated session.
@@ -294,7 +292,7 @@ Settled by the current implementation:
 
 Still open:
 
-1. Analytics HTTP API contracts, server-side employee search/filter, and employee update API. Salary create/history/as-of/correction and correction-history HTTP already exist.
+1. Server-side employee search/filter and employee update API. Compensation analytics HTTP (`GET /api/v1/analytics/compensation`) exists for active employees.
 2. Deployment target and production configuration (HTTPS, `SESSION_COOKIE_SECURE`, real trusted origins).
 3. Audit retention and administrative access policy.
 4. Whether future releases need additional pay frequencies, currency conversion, or bulk salary operations.

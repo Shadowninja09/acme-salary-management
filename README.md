@@ -2,7 +2,7 @@
 
 Web application for ACME’s HR Manager to maintain employee and salary records and, when implemented, analyze how the organization pays about 10,000 people across countries.
 
-This repository is an Incubyte engineering assessment. Session login/logout, CSRF on mutations, employee create/list, salary create/history/as-of/correction, correction-history reads, a React UI for those workflows, and a **1,000-employee** development seed are in the repository. Compensation **analytics**, a **10,000-employee** seed, employee update and server-side search APIs, frontend automated tests, and deployment are **not** done. Intended scope vs current status: [`docs/requirements.md`](docs/requirements.md) section 9.
+This repository is an Incubyte engineering assessment. Session login/logout, CSRF on mutations, employee create/list, salary create/history/as-of/correction, correction-history reads, compensation analytics, a React UI for those workflows, and a **1,000-employee** development seed are in the repository. A **10,000-employee** seed, employee update and server-side search APIs, frontend automated tests, and deployment are **not** done. Intended scope vs current status: [`docs/requirements.md`](docs/requirements.md) section 9.
 
 ## Requirements
 
@@ -129,9 +129,9 @@ npm run build
 
 ## Project status
 
-**Present:** Auth, employee create/list, salary HTTP (including correction and correction history), React workflows for those features, 1,000-employee development seed, backend pytest suite, frontend lint/build.
+**Present:** Auth, employee create/list, salary HTTP (including correction and correction history), compensation analytics HTTP/UI, React workflows for those features, 1,000-employee development seed, backend pytest suite, frontend lint/build.
 
-**Not done:** Employee update API; server-side search/filter; analytics API/UI; 10,000-employee seed; frontend automated tests; production deployment (`SESSION_COOKIE_SECURE`, real trusted origins); demo video.
+**Not done:** Employee update API; server-side search/filter; 10,000-employee seed; frontend automated tests; production deployment (`SESSION_COOKIE_SECURE`, real trusted origins); demo video. Include-inactive analytics filter and annualized/median views are also not on the current analytics endpoint.
 
 ## Development approach
 
