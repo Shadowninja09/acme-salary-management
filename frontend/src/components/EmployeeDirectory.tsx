@@ -32,6 +32,13 @@ function formatStatus(status: EmploymentStatus): string {
   return status === 'ACTIVE' ? 'Active' : 'Inactive'
 }
 
+function isNestedInteractive(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest('a, button, input, select, textarea, label') !== null
+  )
+}
+
 type EmployeeDirectoryProps = {
   onSelectEmployee: (employeeId: number) => void
 }
@@ -103,18 +110,19 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
 
   return (
     <section className="directory" aria-labelledby="directory-heading">
-      <header className="directory-header">
-        <h1 id="directory-heading">Employee directory</h1>
-        <p>
-          Browse HR employee records. Use pagination to move through the
-          directory. Search and status filters apply to the employees on the
-          current page.
-        </p>
+      <header className="page-head">
+        <div>
+          <h1 id="directory-heading">Employees</h1>
+          <p>
+            Paginated directory of HR records. Search and status filters apply to
+            the current page only.
+          </p>
+        </div>
       </header>
 
-      <div className="directory-controls">
-        <label htmlFor="employee-search">
-          Search this page
+      <div className="directory-tools">
+        <label className="search-field" htmlFor="employee-search">
+          <span>Search this page</span>
           <input
             id="employee-search"
             name="search"
@@ -125,40 +133,43 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
             placeholder="Name, code, country, department, or title"
           />
         </label>
-        <label htmlFor="employment-status">
-          Employment status
-          <select
-            id="employment-status"
-            name="employment_status"
-            value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as StatusFilter)
-            }
+        <div className="segmented" role="group" aria-label="Employment status">
+          <button
+            type="button"
+            className={statusFilter === 'ALL' ? 'is-active' : undefined}
+            aria-pressed={statusFilter === 'ALL'}
+            onClick={() => setStatusFilter('ALL')}
           >
-            <option value="ALL">All statuses</option>
-            {EMPLOYMENT_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {formatStatus(status)}
-              </option>
-            ))}
-          </select>
-        </label>
+            All
+          </button>
+          {EMPLOYMENT_STATUSES.map((status) => (
+            <button
+              key={status}
+              type="button"
+              className={statusFilter === status ? 'is-active' : undefined}
+              aria-pressed={statusFilter === status}
+              onClick={() => setStatusFilter(status)}
+            >
+              {formatStatus(status)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
-        <p className="directory-status" role="status">
+        <p className="workspace-status" role="status">
           Loading employees…
         </p>
       ) : null}
 
       {error ? (
-        <p className="directory-status directory-error" role="alert">
+        <p className="status-banner status-banner-error" role="alert">
           {error.message}
         </p>
       ) : null}
 
       {!loading && !error && list && list.items.length === 0 ? (
-        <p className="directory-status" role="status">
+        <p className="empty-note" role="status">
           No employees are available.
         </p>
       ) : null}
@@ -168,54 +179,62 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
       list &&
       list.items.length > 0 &&
       visibleEmployees.length === 0 ? (
-        <p className="directory-status" role="status">
+        <p className="empty-note" role="status">
           No employees on this page match the current search or status filter.
         </p>
       ) : null}
 
       {!loading && !error && visibleEmployees.length > 0 ? (
-        <div className="table-wrap">
-          <table>
-            <caption className="visually-hidden">
-              Employees on the current page
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Employee code</th>
-                <th scope="col">Name</th>
-                <th scope="col">Country</th>
-                <th scope="col">Department</th>
-                <th scope="col">Job title</th>
-                <th scope="col">Status</th>
-                <th scope="col">
-                  <span className="visually-hidden">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleEmployees.map((employee) => (
-                <tr key={employee.id}>
-                  <td>{employee.employee_code}</td>
-                  <td>{employee.full_name}</td>
-                  <td>{employee.country}</td>
-                  <td>{employee.department}</td>
-                  <td>{employee.job_title}</td>
-                  <td>{formatStatus(employee.employment_status)}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="row-action"
-                      onClick={() => onSelectEmployee(employee.id)}
-                      aria-label={`View details for ${employee.full_name}`}
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="people-list">
+          {visibleEmployees.map((employee) => (
+            <li key={employee.id}>
+              <article
+                className="people-row"
+                role="button"
+                tabIndex={0}
+                aria-label={`View details for ${employee.full_name}`}
+                onClick={(event) => {
+                  if (isNestedInteractive(event.target)) {
+                    return
+                  }
+                  onSelectEmployee(employee.id)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') {
+                    return
+                  }
+                  if (isNestedInteractive(event.target)) {
+                    return
+                  }
+                  event.preventDefault()
+                  onSelectEmployee(employee.id)
+                }}
+              >
+                <div className="people-identity">
+                  <p className="people-name">{employee.full_name}</p>
+                  <p>
+                    {employee.employee_code}
+                    <span aria-hidden="true"> · </span>
+                    {employee.job_title}
+                    <span aria-hidden="true"> · </span>
+                    {employee.department}
+                    <span aria-hidden="true"> · </span>
+                    {employee.country}
+                  </p>
+                </div>
+                <span
+                  className={
+                    employee.employment_status === 'ACTIVE'
+                      ? 'status-pill status-pill-active'
+                      : 'status-pill status-pill-inactive'
+                  }
+                >
+                  {formatStatus(employee.employment_status)}
+                </span>
+              </article>
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       <nav className="pagination" aria-label="Employee list pagination">
@@ -223,6 +242,7 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
         <div className="pagination-actions">
           <button
             type="button"
+            className="btn btn-secondary"
             onClick={() => setOffset(Math.max(0, currentOffset - limit))}
             disabled={loading || !hasPrevious}
           >
@@ -230,6 +250,7 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
           </button>
           <button
             type="button"
+            className="btn btn-secondary"
             onClick={() => setOffset(currentOffset + limit)}
             disabled={loading || !hasNext}
           >

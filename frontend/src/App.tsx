@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { logout } from './api/auth'
-import { ApiError } from './api/client'
+import { ApiError, setUnauthorizedHandler } from './api/client'
 import { listEmployees } from './api/employees'
 import { CompensationAnalyticsView } from './components/CompensationAnalytics'
 import { EmployeeDetail } from './components/EmployeeDetail'
@@ -18,6 +18,27 @@ function App() {
   const [loggingOut, setLoggingOut] = useState(false)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null)
   const [view, setView] = useState<AuthenticatedView>('directory')
+
+  function returnToAnonymousSession() {
+    setSelectedEmployeeId(null)
+    setView('directory')
+    setLogoutError(null)
+    setSessionError(null)
+    setSession('anonymous')
+  }
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setSelectedEmployeeId(null)
+      setView('directory')
+      setLogoutError(null)
+      setSessionError(null)
+      setSession('anonymous')
+    })
+    return () => {
+      setUnauthorizedHandler(null)
+    }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -61,12 +82,13 @@ function App() {
       if (result.status !== 'ok') {
         throw new ApiError(0, 'Sign-out did not complete. Try again.')
       }
-      setSelectedEmployeeId(null)
-      setView('directory')
-      setSessionError(null)
-      setSession('anonymous')
+      returnToAnonymousSession()
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') {
+        return
+      }
+      if (cause instanceof ApiError && cause.status === 401) {
+        returnToAnonymousSession()
         return
       }
       setLogoutError(
@@ -79,53 +101,83 @@ function App() {
     }
   }
 
-  return (
-    <main className="page">
-      {session === 'checking' ? (
-        <p className="directory-status" role="status">
+  if (session === 'checking') {
+    return (
+      <div className="login-page">
+        <p className="status-banner" role="status">
           Checking session…
         </p>
-      ) : null}
-      {session === 'anonymous' ? (
-        <>
+      </div>
+    )
+  }
+
+  if (session === 'anonymous') {
+    return (
+      <div className="login-page">
+        <div>
           {sessionError ? (
-            <p className="directory-status directory-error" role="alert">
+            <p className="status-banner status-banner-error" role="alert">
               {sessionError}
             </p>
           ) : null}
           <LoginForm onAuthenticated={() => setSession('authenticated')} />
-        </>
-      ) : null}
-      {session === 'authenticated' ? (
-        <>
-          <header className="app-header">
-            <p className="app-header-title">ACME Salary Management</p>
-            <div className="app-header-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedEmployeeId(null)
-                  setView('directory')
-                }}
-              >
-                Directory
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedEmployeeId(null)
-                  setView('analytics')
-                }}
-              >
-                Analytics
-              </button>
-              <button type="button" onClick={() => void handleLogout()} disabled={loggingOut}>
-                {loggingOut ? 'Signing out…' : 'Logout'}
-              </button>
-            </div>
-          </header>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="app-sidebar">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            A
+          </span>
+          <div>
+            <p className="brand-name">ACME</p>
+            <p className="brand-product">Salary Management</p>
+          </div>
+        </div>
+        <nav className="app-nav" aria-label="Primary">
+          <button
+            type="button"
+            className={view === 'directory' ? 'nav-link is-active' : 'nav-link'}
+            aria-current={view === 'directory' ? 'page' : undefined}
+            onClick={() => {
+              setSelectedEmployeeId(null)
+              setView('directory')
+            }}
+          >
+            Employees
+          </button>
+          <button
+            type="button"
+            className={view === 'analytics' ? 'nav-link is-active' : 'nav-link'}
+            aria-current={view === 'analytics' ? 'page' : undefined}
+            onClick={() => {
+              setSelectedEmployeeId(null)
+              setView('analytics')
+            }}
+          >
+            Analytics
+          </button>
+        </nav>
+        <div className="session-bar">
+          <p className="session-role">HR Manager</p>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => void handleLogout()}
+            disabled={loggingOut}
+          >
+            {loggingOut ? 'Signing out…' : 'Sign out'}
+          </button>
+        </div>
+      </aside>
+      <div className="app-content">
+        <main className="app-main">
           {logoutError ? (
-            <p className="directory-status directory-error" role="alert">
+            <p className="status-banner status-banner-error" role="alert">
               {logoutError}
             </p>
           ) : null}
@@ -142,11 +194,11 @@ function App() {
               ) : null}
             </>
           ) : (
-            <CompensationAnalyticsView onOpenDirectory={() => setView('directory')} />
+            <CompensationAnalyticsView />
           )}
-        </>
-      ) : null}
-    </main>
+        </main>
+      </div>
+    </div>
   )
 }
 

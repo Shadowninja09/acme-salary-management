@@ -70,6 +70,21 @@ type RequestOptions = {
   unauthorizedMessage?: string
 }
 
+export type UnauthorizedHandler = () => void
+
+let unauthorizedHandler: UnauthorizedHandler | null = null
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler
+}
+
+function notifyUnauthorized(path: string): void {
+  if (path === LOGIN_PATH) {
+    return
+  }
+  unauthorizedHandler?.()
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions): Promise<T> {
   const url = options.query
     ? `${path}?${new URLSearchParams(options.query).toString()}`
@@ -106,6 +121,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions): Prom
   }
 
   if (response.status === 401) {
+    notifyUnauthorized(path)
     throw new ApiError(
       401,
       options.unauthorizedMessage ??

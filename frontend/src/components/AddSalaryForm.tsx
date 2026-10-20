@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
 import { createEmployeeSalary } from '../api/salaries'
+import { permittedCurrenciesForCountry } from '../countryCurrency'
 import {
   PAY_FREQUENCIES,
-  SALARY_CURRENCIES,
   type PayFrequency,
   type SalaryCurrency,
 } from '../types/salary'
@@ -13,7 +13,9 @@ const AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/
 
 type AddSalaryFormProps = {
   employeeId: number
-  onCreated: () => Promise<void> | void
+  country: string
+  onCreated: () => Promise<boolean | void> | boolean | void
+  onCancel?: () => void
 }
 
 function isAmountTooLarge(value: string): boolean {
@@ -51,9 +53,19 @@ function validateAmount(value: string): string | null {
   return null
 }
 
-export function AddSalaryForm({ employeeId, onCreated }: AddSalaryFormProps) {
+export function AddSalaryForm({
+  employeeId,
+  country,
+  onCreated,
+  onCancel,
+}: AddSalaryFormProps) {
+  const permittedCurrencies = permittedCurrenciesForCountry(country)
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState<SalaryCurrency>('INR')
+  const [currency, setCurrency] = useState<SalaryCurrency | null>(null)
+  const selectedCurrency =
+    currency !== null && permittedCurrencies.includes(currency)
+      ? currency
+      : (permittedCurrencies[0] ?? null)
   const [payFrequency, setPayFrequency] = useState<PayFrequency>('MONTHLY')
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -72,28 +84,54 @@ export function AddSalaryForm({ employeeId, onCreated }: AddSalaryFormProps) {
       setError('Enter an effective date.')
       return
     }
+    if (selectedCurrency === null) {
+      setError(
+        "No salary currency policy is configured for this employee's country.",
+      )
+      return
+    }
 
     setSubmitting(true)
     setError(null)
     try {
-      await createEmployeeSalary(employeeId, {
-        amount: amount.trim(),
-        currency,
-        pay_frequency: payFrequency,
-        effective_from: effectiveFrom,
-      })
-      await onCreated()
-      setAmount('')
-      setMessage('Salary record added.')
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === 'AbortError') {
+      try {
+        await createEmployeeSalary(employeeId, {
+          amount: amount.trim(),
+          currency: selectedCurrency,
+          pay_frequency: payFrequency,
+          effective_from: effectiveFrom,
+        })
+      } catch (cause) {
+        if (cause instanceof DOMException && cause.name === 'AbortError') {
+          return
+        }
+        setError(
+          cause instanceof ApiError
+            ? cause.message
+            : 'The salary could not be saved. Try again.',
+        )
         return
       }
-      setError(
-        cause instanceof ApiError
-          ? cause.message
-          : 'The salary could not be saved. Try again.',
-      )
+
+      setAmount('')
+      setEffectiveFrom('')
+      setMessage('Salary record added.')
+
+      try {
+        const refreshed = await onCreated()
+        if (refreshed === false) {
+          setError(
+            'The salary was saved, but the history lists could not be updated. This page may be out of date.',
+          )
+        }
+      } catch (cause) {
+        if (cause instanceof DOMException && cause.name === 'AbortError') {
+          return
+        }
+        setError(
+          'The salary was saved, but the history lists could not be updated. This page may be out of date.',
+        )
+      }
     } finally {
       setSubmitting(false)
     }
@@ -103,12 +141,12 @@ export function AddSalaryForm({ employeeId, onCreated }: AddSalaryFormProps) {
     <form className="salary-form" onSubmit={(event) => void handleSubmit(event)}>
       <h2 className="detail-subheading">Add salary</h2>
       {message ? (
-        <p className="directory-status" role="status">
+        <p className="status-banner status-banner-ok" role="status">
           {message}
         </p>
       ) : null}
       {error ? (
-        <p className="directory-status directory-error" role="alert">
+        <p className="status-banner status-banner-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -131,15 +169,19 @@ export function AddSalaryForm({ employeeId, onCreated }: AddSalaryFormProps) {
           <select
             id="salary-currency"
             name="currency"
-            value={currency}
+            value={selectedCurrency ?? ''}
             onChange={(event) => setCurrency(event.target.value as SalaryCurrency)}
-            disabled={submitting}
+            disabled={submitting || permittedCurrencies.length === 0}
           >
-            {SALARY_CURRENCIES.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
+            {permittedCurrencies.length === 0 ? (
+              <option value="">No permitted currency</option>
+            ) : (
+              permittedCurrencies.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))
+            )}
           </select>
         </label>
         <label htmlFor="salary-frequency">
@@ -173,9 +215,25 @@ export function AddSalaryForm({ employeeId, onCreated }: AddSalaryFormProps) {
           />
         </label>
       </div>
-      <button type="submit" disabled={submitting}>
-        {submitting ? 'Saving…' : 'Save salary'}
-      </button>
+      <div className="salary-form-actions">
+        <button
+          className="btn btn-primary"
+          type="submit"
+          disabled={submitting || permittedCurrencies.length === 0}
+        >
+          {submitting ? 'Saving…' : 'Save salary'}
+        </button>
+        {onCancel ? (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+        ) : null}
+      </div>
     </form>
   )
 }

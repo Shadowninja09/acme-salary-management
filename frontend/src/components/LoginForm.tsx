@@ -44,19 +44,30 @@ export function LoginForm({ onAuthenticated }: LoginFormProps) {
 
   return (
     <section className="login" aria-labelledby="login-heading">
-      <h1 id="login-heading">ACME Salary Management</h1>
+      <div className="login-brand">
+        <span className="brand-mark" aria-hidden="true">
+          A
+        </span>
+        <div>
+          <p className="brand-name">ACME</p>
+          <p className="brand-product">Salary Management</p>
+        </div>
+      </div>
+      <h1 id="login-heading">Sign in</h1>
       <p className="login-lead">
-        Sign in as the HR Manager to view employee records.
+        Use the HR Manager credentials to access employee records and compensation
+        analytics.
       </p>
       <form className="login-form" onSubmit={(event) => void handleSubmit(event)}>
         {error ? (
-          <p className="directory-status directory-error" role="alert">
+          <p className="status-banner status-banner-error" role="alert">
             {error}
           </p>
         ) : null}
-        <label htmlFor="username">
+        <label className="field-label" htmlFor="username">
           Username
           <input
+            className="field-control"
             id="username"
             name="username"
             type="text"
@@ -67,9 +78,10 @@ export function LoginForm({ onAuthenticated }: LoginFormProps) {
             disabled={submitting}
           />
         </label>
-        <label htmlFor="password">
+        <label className="field-label" htmlFor="password">
           Password
           <input
+            className="field-control"
             id="password"
             name="password"
             type="password"
@@ -80,7 +92,7 @@ export function LoginForm({ onAuthenticated }: LoginFormProps) {
             disabled={submitting}
           />
         </label>
-        <button type="submit" disabled={submitting}>
+        <button className="btn btn-primary" type="submit" disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
