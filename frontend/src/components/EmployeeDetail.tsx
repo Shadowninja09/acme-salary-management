@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
 import { getEmployee } from '../api/employees'
-import { listEmployeeSalaries } from '../api/salaries'
+import { listEmployeeSalaries, listEmployeeSalaryCorrections } from '../api/salaries'
 import { AddSalaryForm } from './AddSalaryForm'
 import { CorrectSalaryForm } from './CorrectSalaryForm'
 import type { Employee } from '../types/employee'
-import type { PayFrequency, Salary } from '../types/salary'
+import type { PayFrequency, Salary, SalaryAuditSnapshot, SalaryCorrectionAudit } from '../types/salary'
 
 type EmployeeDetailProps = {
   employeeId: number
@@ -16,9 +16,41 @@ function formatPayFrequency(frequency: PayFrequency): string {
   return frequency === 'MONTHLY' ? 'Monthly' : 'Annual'
 }
 
+function formatChangedAt(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+  return parsed.toLocaleString()
+}
+
+function SalarySnapshotValues({ snapshot }: { snapshot: SalaryAuditSnapshot }) {
+  return (
+    <dl className="correction-values">
+      <div>
+        <dt>Amount</dt>
+        <dd>{snapshot.amount}</dd>
+      </div>
+      <div>
+        <dt>Currency</dt>
+        <dd>{snapshot.currency}</dd>
+      </div>
+      <div>
+        <dt>Pay frequency</dt>
+        <dd>{formatPayFrequency(snapshot.pay_frequency)}</dd>
+      </div>
+      <div>
+        <dt>Effective date</dt>
+        <dd>{snapshot.effective_from}</dd>
+      </div>
+    </dl>
+  )
+}
+
 export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [salaries, setSalaries] = useState<Salary[] | null>(null)
+  const [corrections, setCorrections] = useState<SalaryCorrectionAudit[] | null>(null)
   const [selectedSalaryId, setSelectedSalaryId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ApiError | null>(null)
@@ -32,14 +64,17 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
       setError(null)
       setEmployee(null)
       setSalaries(null)
+      setCorrections(null)
       try {
-        const [profile, history] = await Promise.all([
+        const [profile, history, correctionHistory] = await Promise.all([
           getEmployee(employeeId, controller.signal),
           listEmployeeSalaries(employeeId, controller.signal),
+          listEmployeeSalaryCorrections(employeeId, controller.signal),
         ])
         if (!cancelled) {
           setEmployee(profile)
           setSalaries(history)
+          setCorrections(correctionHistory)
           setSelectedSalaryId(null)
         }
       } catch (cause) {
@@ -62,8 +97,12 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
   }, [employeeId])
 
   async function refreshHistory() {
-    const history = await listEmployeeSalaries(employeeId)
+    const [history, correctionHistory] = await Promise.all([
+      listEmployeeSalaries(employeeId),
+      listEmployeeSalaryCorrections(employeeId),
+    ])
     setSalaries(history)
+    setCorrections(correctionHistory)
     setSelectedSalaryId((currentId) =>
       currentId !== null && history.some((salary) => salary.id === currentId)
         ? currentId
@@ -130,7 +169,10 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
               key={selectedSalary.id}
               employeeId={employee.id}
               salary={selectedSalary}
-              onCorrected={refreshHistory}
+              onCorrected={async () => {
+                await refreshHistory()
+                setSelectedSalaryId(null)
+              }}
               onCancel={() => setSelectedSalaryId(null)}
             />
           ) : null}
@@ -173,6 +215,54 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
                           Correct
                         </button>
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          <h2 className="detail-subheading">Correction history</h2>
+          {corrections && corrections.length === 0 ? (
+            <p className="directory-status" role="status">
+              No correction records.
+            </p>
+          ) : null}
+          {corrections && corrections.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <caption className="visually-hidden">
+                  Salary correction history, newest correction first
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Correction date/time</th>
+                    <th scope="col">Salary record ID</th>
+                    <th scope="col">Previous values</th>
+                    <th scope="col">New values</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Changed by</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {corrections.map((correction) => (
+                    <tr
+                      key={`${correction.salary_record_id}-${correction.changed_at}-${correction.reason}`}
+                    >
+                      <td>
+                        <time dateTime={correction.changed_at}>
+                          {formatChangedAt(correction.changed_at)}
+                        </time>
+                      </td>
+                      <td>{correction.salary_record_id}</td>
+                      <td>
+                        <SalarySnapshotValues snapshot={correction.old_values} />
+                      </td>
+                      <td>
+                        <SalarySnapshotValues snapshot={correction.new_values} />
+                      </td>
+                      <td className="correction-reason">{correction.reason}</td>
+                      <td>{correction.changed_by}</td>
                     </tr>
                   ))}
                 </tbody>

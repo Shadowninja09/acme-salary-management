@@ -180,6 +180,40 @@
   background: #fff;
 }
 
+.table-wrap + .detail-subheading {
+  margin-top: 1.75rem;
+}
+
+.correction-values {
+  margin: 0;
+  display: grid;
+  gap: 0.2rem 0.75rem;
+}
+
+.correction-values div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.5rem;
+  align-items: baseline;
+}
+
+.correction-values dt {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #5b6777;
+}
+
+.correction-values dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.correction-reason {
+  max-width: 18rem;
+  overflow-wrap: anywhere;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

@@ -1,5 +1,10 @@
 import { ApiError, apiGet, apiPatch, apiPost } from './client'
-import type { Salary, SalaryCorrectionRequest, SalaryCreateRequest } from '../types/salary'
+import type {
+  Salary,
+  SalaryCorrectionAudit,
+  SalaryCorrectionRequest,
+  SalaryCreateRequest,
+} from '../types/salary'
 
 export function listEmployeeSalaries(
   employeeId: number,
@@ -7,6 +12,17 @@ export function listEmployeeSalaries(
 ): Promise<Salary[]> {
   return apiGet<Salary[]>(
     `/api/v1/employees/${employeeId}/salaries`,
+    undefined,
+    signal,
+  )
+}
+
+export function listEmployeeSalaryCorrections(
+  employeeId: number,
+  signal?: AbortSignal,
+): Promise<SalaryCorrectionAudit[]> {
+  return apiGet<SalaryCorrectionAudit[]>(
+    `/api/v1/employees/${employeeId}/salary-corrections`,
     undefined,
     signal,
   )

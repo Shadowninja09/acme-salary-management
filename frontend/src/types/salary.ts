@@ -27,3 +27,19 @@ export type SalaryCorrectionRequest = {
   effective_from: string
   reason: string
 }
+
+export type SalaryAuditSnapshot = {
+  amount: string
+  currency: SalaryCurrency
+  pay_frequency: PayFrequency
+  effective_from: string
+}
+
+export type SalaryCorrectionAudit = {
+  salary_record_id: number
+  changed_at: string
+  changed_by: string
+  reason: string
+  old_values: SalaryAuditSnapshot
+  new_values: SalaryAuditSnapshot
+}
