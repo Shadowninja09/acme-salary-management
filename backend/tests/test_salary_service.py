@@ -176,6 +176,52 @@ def test_correct_salary_replaces_same_row(db_session: Session) -> None:
     assert unchanged.amount == Decimal("1234.56")
 
 
+def test_correct_salary_keeps_existing_effective_date(
+    db_session: Session,
+) -> None:
+    employee = _persist_employee(db_session)
+    original = create_salary(db_session, _create_payload(employee.id))
+    original_id = original.id
+
+    updated = correct_salary(
+        db_session,
+        employee.id,
+        original.id,
+        _correction_payload(
+            amount=Decimal("2000.00"),
+            currency=Currency.INR,
+            pay_frequency=PayFrequency.MONTHLY,
+            effective_from=date(2026, 1, 1),
+        ),
+    )
+    logs = _audit_rows(db_session, original_id)
+    updates = [log for log in logs if log.action == AuditAction.UPDATE.value]
+
+    assert updated.id == original_id
+    assert updated.amount == Decimal("2000.00")
+    assert updated.currency == Currency.INR.value
+    assert updated.pay_frequency == PayFrequency.MONTHLY.value
+    assert updated.effective_from == date(2026, 1, 1)
+    assert db_session.scalar(select(func.count()).select_from(SalaryRecord)) == 1
+    assert len(logs) == 2
+    assert len(updates) == 1
+    log = updates[0]
+    assert log.old_values == {
+        "amount": "1234.56",
+        "currency": Currency.INR.value,
+        "pay_frequency": PayFrequency.MONTHLY.value,
+        "effective_from": "2026-01-01",
+    }
+    assert log.new_values == {
+        "amount": "2000.00",
+        "currency": Currency.INR.value,
+        "pay_frequency": PayFrequency.MONTHLY.value,
+        "effective_from": "2026-01-01",
+    }
+    assert log.reason == "Corrected recorded amount"
+    assert log.changed_by == get_settings().hr_manager_identity
+
+
 @pytest.mark.parametrize("reason", ["", "   "])
 def test_correct_salary_requires_non_empty_reason(
     db_session: Session, reason: str
@@ -239,13 +285,32 @@ def test_correct_salary_rejects_duplicate_effective_date(
         db_session, _create_payload(employee.id, effective_from=date(2026, 3, 1))
     )
 
+    nested = db_session.begin_nested()
     with pytest.raises(DuplicateSalaryEffectiveDateError):
-        correct_salary(
-            db_session,
-            employee.id,
-            original.id,
-            _correction_payload(effective_from=date(2026, 3, 1)),
-        )
+        try:
+            correct_salary(
+                db_session,
+                employee.id,
+                original.id,
+                _correction_payload(effective_from=date(2026, 3, 1)),
+            )
+        except DuplicateSalaryEffectiveDateError:
+            nested.rollback()
+            raise
+
+    db_session.expire_all()
+    stored = db_session.get(SalaryRecord, original.id)
+    logs = _audit_rows(db_session, original.id)
+    updates = [log for log in logs if log.action == AuditAction.UPDATE.value]
+
+    assert stored is not None
+    assert stored.id == original.id
+    assert stored.amount == Decimal("1234.56")
+    assert stored.currency == Currency.INR.value
+    assert stored.pay_frequency == PayFrequency.MONTHLY.value
+    assert stored.effective_from == date(2026, 1, 1)
+    assert len(updates) == 0
+    assert all(log.action == AuditAction.CREATE.value for log in logs)
 
 
 def test_invalid_correction_leaves_persisted_salary_unchanged(

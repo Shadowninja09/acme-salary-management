@@ -585,6 +585,44 @@ def test_correct_salary_updates_existing_record_and_keeps_id(
     )
 
 
+def test_correct_salary_keeps_existing_effective_date(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+    salary_id = created.json()["id"]
+
+    response = authenticated_client.patch(
+        f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
+        json={
+            **CORRECTION_PAYLOAD,
+            "currency": "INR",
+            "pay_frequency": "MONTHLY",
+            "effective_from": "2026-01-01",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == salary_id
+    assert body["employee_id"] == employee_id
+    assert body["amount"] == "2000.00"
+    assert isinstance(body["amount"], str)
+    assert body["currency"] == "INR"
+    assert body["pay_frequency"] == "MONTHLY"
+    assert body["effective_from"] == "2026-01-01"
+    stored = db_session.get(SalaryRecord, salary_id)
+    assert stored is not None
+    assert stored.id == salary_id
+    assert stored.effective_from.isoformat() == "2026-01-01"
+    assert str(stored.amount) == "2000.00"
+
+
 def test_correct_salary_writes_update_audit(
     authenticated_client: TestClient,
     db_session: Session,
@@ -682,6 +720,7 @@ def test_correct_salary_mismatch_returns_404_and_does_not_modify(
 
 def test_correct_salary_duplicate_effective_date_returns_409(
     authenticated_client: TestClient,
+    db_session: Session,
 ) -> None:
     employee_id = _create_employee(authenticated_client)
     first = authenticated_client.post(
@@ -694,9 +733,10 @@ def test_correct_salary_duplicate_effective_date_returns_409(
     )
     assert first.status_code == 201
     assert second.status_code == 201
+    salary_id = first.json()["id"]
 
     response = authenticated_client.patch(
-        f"/api/v1/employees/{employee_id}/salaries/{first.json()['id']}",
+        f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
         json={**CORRECTION_PAYLOAD, "effective_from": "2026-03-01"},
     )
 
@@ -704,6 +744,21 @@ def test_correct_salary_duplicate_effective_date_returns_409(
     assert response.json() == {
         "detail": "Salary already exists for this effective date"
     }
+    stored = db_session.get(SalaryRecord, salary_id)
+    assert stored is not None
+    assert stored.id == salary_id
+    assert str(stored.amount) == "1234.56"
+    assert stored.currency == "INR"
+    assert stored.pay_frequency == "MONTHLY"
+    assert stored.effective_from.isoformat() == "2026-01-01"
+    logs = list(
+        db_session.scalars(
+            select(SalaryAuditLog).where(SalaryAuditLog.salary_record_id == salary_id)
+        ).all()
+    )
+    assert len(logs) == 1
+    assert logs[0].action == AuditAction.CREATE.value
+    assert not any(log.action == AuditAction.UPDATE.value for log in logs)
 
 
 @pytest.mark.parametrize(
