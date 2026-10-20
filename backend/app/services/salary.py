@@ -193,6 +193,23 @@ def correct_salary(
     return record
 
 
+def list_employee_salary_corrections(
+    db: Session, employee_id: int
+) -> list[SalaryAuditLog]:
+    _require_employee(db, employee_id)
+    return list(
+        db.scalars(
+            select(SalaryAuditLog)
+            .join(SalaryRecord, SalaryAuditLog.salary_record_id == SalaryRecord.id)
+            .where(
+                SalaryRecord.employee_id == employee_id,
+                SalaryAuditLog.action == AuditAction.UPDATE.value,
+            )
+            .order_by(SalaryAuditLog.changed_at.desc(), SalaryAuditLog.id.desc())
+        ).all()
+    )
+
+
 def list_employee_salaries(db: Session, employee_id: int) -> list[SalaryRecord]:
     _require_employee(db, employee_id)
     return list(

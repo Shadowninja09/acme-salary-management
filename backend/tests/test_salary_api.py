@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -386,6 +386,142 @@ def test_list_salaries_unauthenticated_returns_401(api_client: TestClient) -> No
 
     assert response.status_code == 401
     assert response.json() == {"detail": NOT_AUTHENTICATED_DETAIL}
+
+
+def test_list_salary_corrections_returns_update_audit(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+    salary_id = created.json()["id"]
+    corrected = authenticated_client.patch(
+        f"/api/v1/employees/{employee_id}/salaries/{salary_id}",
+        json=CORRECTION_PAYLOAD,
+    )
+    assert corrected.status_code == 200
+
+    stored = db_session.scalars(
+        select(SalaryAuditLog).where(
+            SalaryAuditLog.salary_record_id == salary_id,
+            SalaryAuditLog.action == AuditAction.UPDATE.value,
+        )
+    ).one()
+
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salary-corrections"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    item = body[0]
+    assert item["salary_record_id"] == salary_id
+    assert item["changed_by"] == get_settings().hr_manager_identity
+    assert item["reason"] == "Corrected recorded amount"
+    assert item["old_values"] == {
+        "amount": "1234.56",
+        "currency": "INR",
+        "pay_frequency": "MONTHLY",
+        "effective_from": "2026-01-01",
+    }
+    assert item["new_values"] == {
+        "amount": "2000.00",
+        "currency": "USD",
+        "pay_frequency": "ANNUAL",
+        "effective_from": "2026-02-01",
+    }
+    assert datetime.fromisoformat(item["changed_at"]) == stored.changed_at
+    assert set(item.keys()) == {
+        "salary_record_id",
+        "changed_at",
+        "changed_by",
+        "reason",
+        "old_values",
+        "new_values",
+    }
+
+
+def test_list_salary_corrections_empty_when_employee_has_no_updates(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salary-corrections"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_salary_corrections_unknown_employee_returns_404(
+    authenticated_client: TestClient,
+) -> None:
+    response = authenticated_client.get("/api/v1/employees/999999999/salary-corrections")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Employee not found"}
+
+
+def test_list_salary_corrections_unauthenticated_returns_401(
+    api_client: TestClient,
+) -> None:
+    response = api_client.get("/api/v1/employees/1/salary-corrections")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": NOT_AUTHENTICATED_DETAIL}
+
+
+def test_list_salary_corrections_does_not_require_csrf_header(
+    api_client: TestClient,
+    db_session: Session,
+) -> None:
+    employee_id = create_employee(
+        db_session,
+        EmployeeCreate(
+            employee_code="EMP-000001",
+            full_name="Ada Lovelace",
+            country="United Kingdom",
+            department="Engineering",
+            job_title="Analyst",
+            employment_status=EmploymentStatus.ACTIVE,
+        ),
+    ).id
+    raw_token, _record = issue_hr_manager_session(db_session, lifetime_seconds=3600)
+    db_session.commit()
+    api_client.cookies.set(SESSION_COOKIE_NAME, raw_token)
+    try:
+        response = api_client.get(
+            f"/api/v1/employees/{employee_id}/salary-corrections"
+        )
+    finally:
+        api_client.cookies.delete(SESSION_COOKIE_NAME)
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert "X-CSRF-Token" not in (response.request.headers or {})
+
+
+def test_list_salary_corrections_omits_create_audits(
+    authenticated_client: TestClient,
+) -> None:
+    employee_id = _create_employee(authenticated_client)
+    created = authenticated_client.post(
+        f"/api/v1/employees/{employee_id}/salaries",
+        json=SALARY_PAYLOAD,
+    )
+    assert created.status_code == 201
+
+    response = authenticated_client.get(
+        f"/api/v1/employees/{employee_id}/salary-corrections"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 def test_applicable_salary_returns_latest_on_or_before_date(

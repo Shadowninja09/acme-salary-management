@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_authenticated_session, require_csrf_token
 from app.db.session import get_db
-from app.schemas.salary import SalaryCorrection, SalaryCreate, SalaryCreateRequest, SalaryRead
+from app.schemas.salary import (
+    SalaryCorrection,
+    SalaryCorrectionAuditRead,
+    SalaryCreate,
+    SalaryCreateRequest,
+    SalaryRead,
+)
 from app.services.salary import (
     DuplicateSalaryEffectiveDateError,
     EmployeeNotFoundError,
@@ -18,6 +24,7 @@ from app.services.salary import (
     create_salary,
     get_applicable_salary,
     list_employee_salaries,
+    list_employee_salary_corrections,
 )
 
 router = APIRouter(
@@ -91,6 +98,24 @@ def list_employee_salaries_endpoint(
             detail="Employee not found",
         ) from exc
     return [SalaryRead.model_validate(record) for record in records]
+
+
+@router.get(
+    "/{employee_id}/salary-corrections",
+    response_model=list[SalaryCorrectionAuditRead],
+)
+def list_employee_salary_corrections_endpoint(
+    employee_id: int,
+    db: Session = Depends(get_db),
+) -> list[SalaryCorrectionAuditRead]:
+    try:
+        records = list_employee_salary_corrections(db, employee_id)
+    except EmployeeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found",
+        ) from exc
+    return [SalaryCorrectionAuditRead.model_validate(record) for record in records]
 
 
 @router.get(

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
@@ -72,3 +72,23 @@ class SalaryRead(BaseModel):
     @field_serializer("amount")
     def serialize_amount(self, value: Decimal) -> str:
         return format(value, "f")
+
+
+class SalaryAuditSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: str
+    currency: Currency
+    pay_frequency: PayFrequency
+    effective_from: date
+
+
+class SalaryCorrectionAuditRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    salary_record_id: int
+    changed_at: datetime
+    changed_by: str
+    reason: str
+    old_values: SalaryAuditSnapshot
+    new_values: SalaryAuditSnapshot

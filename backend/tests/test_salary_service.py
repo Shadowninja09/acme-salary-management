@@ -28,6 +28,7 @@ from app.services.salary import (
     create_salary,
     get_applicable_salary,
     list_employee_salaries,
+    list_employee_salary_corrections,
 )
 
 
@@ -525,3 +526,103 @@ def test_audit_flush_failure_does_not_leave_committed_salary(
         == 0
     )
     assert db_session.scalar(select(func.count()).select_from(SalaryAuditLog)) == 0
+
+
+def test_list_employee_salary_corrections_empty_when_only_create_audit(
+    db_session: Session,
+) -> None:
+    employee = _persist_employee(db_session)
+    create_salary(db_session, _create_payload(employee.id))
+
+    assert list_employee_salary_corrections(db_session, employee.id) == []
+
+
+def test_list_employee_salary_corrections_returns_update_audit(
+    db_session: Session,
+) -> None:
+    employee = _persist_employee(db_session)
+    original = create_salary(db_session, _create_payload(employee.id))
+    correct_salary(
+        db_session, employee.id, original.id, _correction_payload()
+    )
+
+    corrections = list_employee_salary_corrections(db_session, employee.id)
+
+    assert len(corrections) == 1
+    log = corrections[0]
+    assert log.salary_record_id == original.id
+    assert log.action == AuditAction.UPDATE.value
+    assert log.old_values == {
+        "amount": "1234.56",
+        "currency": Currency.INR.value,
+        "pay_frequency": PayFrequency.MONTHLY.value,
+        "effective_from": "2026-01-01",
+    }
+    assert log.new_values == {
+        "amount": "2000.00",
+        "currency": Currency.USD.value,
+        "pay_frequency": PayFrequency.ANNUAL.value,
+        "effective_from": "2026-02-01",
+    }
+    assert log.reason == "Corrected recorded amount"
+    assert log.changed_by == get_settings().hr_manager_identity
+    assert log.changed_at.tzinfo is not None
+
+
+def test_list_employee_salary_corrections_orders_newest_first(
+    db_session: Session,
+) -> None:
+    employee = _persist_employee(db_session)
+    original = create_salary(db_session, _create_payload(employee.id))
+    first = correct_salary(
+        db_session, employee.id, original.id, _correction_payload()
+    )
+    second = correct_salary(
+        db_session,
+        employee.id,
+        first.id,
+        _correction_payload(
+            amount=Decimal("3000.00"),
+            effective_from=date(2026, 2, 1),
+        ),
+    )
+
+    corrections = list_employee_salary_corrections(db_session, employee.id)
+
+    assert [log.id for log in corrections] == sorted(
+        (log.id for log in corrections), reverse=True
+    )
+    assert corrections[0].new_values["amount"] == "3000.00"
+    assert corrections[1].new_values["amount"] == "2000.00"
+    assert corrections[0].salary_record_id == second.id
+    assert corrections[1].salary_record_id == first.id
+    assert corrections[0].changed_at >= corrections[1].changed_at
+
+
+def test_list_employee_salary_corrections_rejects_unknown_employee(
+    db_session: Session,
+) -> None:
+    with pytest.raises(EmployeeNotFoundError):
+        list_employee_salary_corrections(db_session, 999999999)
+
+
+def test_list_employee_salary_corrections_excludes_other_employee_audits(
+    db_session: Session,
+) -> None:
+    owner = _persist_employee(db_session, employee_code="EMP-000001")
+    other = _persist_employee(db_session, employee_code="EMP-000002")
+    owner_salary = create_salary(db_session, _create_payload(owner.id))
+    other_salary = create_salary(db_session, _create_payload(other.id))
+    correct_salary(db_session, owner.id, owner_salary.id, _correction_payload())
+    correct_salary(
+        db_session,
+        other.id,
+        other_salary.id,
+        _correction_payload(reason="Other employee correction"),
+    )
+
+    corrections = list_employee_salary_corrections(db_session, owner.id)
+
+    assert len(corrections) == 1
+    assert corrections[0].salary_record_id == owner_salary.id
+    assert corrections[0].reason == "Corrected recorded amount"
