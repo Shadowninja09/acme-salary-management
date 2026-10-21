@@ -258,11 +258,40 @@ npm run build
 
 **Present:** Auth, employee create/list APIs with optional `q` and `status`, salary HTTP (including correction, country–currency validation, and UPDATE-only correction history), compensation analytics HTTP/UI, React workflows for those features, 1,000-employee seed default, `--count 10000` for assessment scale, backend pytest suite, frontend Vitest, and a local Docker Compose recipe.
 
-**Release tasks:** production deployment (`SESSION_COOKIE_SECURE`, real trusted origins, public URL); demo video. Local Compose on `http://localhost:8000` does **not** prove public deployment readiness.
-
-**Deferred (not this submission):** employee-update API/UI, employee-create UI, include-inactive analytics, monthly ×12 annualization, median/pay-band/trend views. See [`docs/requirements.md`](docs/requirements.md) section 10.
+**Release tasks** (not product gaps): recording a demo video and emailing the repository link. Production HTTPS (`SESSION_COOKIE_SECURE`, real trusted origins, public URL) is optional and unverified. Local Compose on `http://localhost:8000` is not a public deployment. See [`docs/delivery-checklist.md`](docs/delivery-checklist.md).
 
 A **local** host `acme_salary` database was inspected on 2026-10-21 at 10,000 employees / 18,000 salaries (Alembic `0004_create_user_sessions`). That snapshot is not created by cloning the repo; reviewers seed Compose (or host) themselves.
+
+## Future Improvements and Deliberate Exclusions
+
+This is a local HR Manager tool for salary records and honest compensation grouping. It is not a full HRIS or payroll system. Full lists live in [`docs/requirements.md`](docs/requirements.md) (§6, §10) and [`docs/architecture.md`](docs/architecture.md). The items below are **not** claims that implemented APIs are missing: employee **create** HTTP, salary history, as-of HTTP, and **server-side** directory `q` / `status` are already in the product.
+
+### Deliberate exclusions
+
+- **Employee-update API/UI and employee-create UI.** Seed plus list/view is enough to maintain salaries on a large dataset. Create remains on HTTP for seed and API callers.
+- **Include-inactive analytics; multiplying monthly pay by 12; medians, pay bands, and trends.** Mixing inactive staff, monthly with annual, or currencies would misstate pay. Groups stay `(currency, pay_frequency)` for **active** employees.
+- **Payroll, tax, attendance, self-service, CSV import/export, FX conversion, hourly pay, and natural-language analytics in this submission.** Those need payment, FX, or working-hours rules this assessment does not define. This release keeps analytics as explicit, testable queries. An authenticated HR analytics chatbot is listed below as **planned future work**, not as a current feature.
+- **Multi-user roles** beyond the one configured HR Manager.
+
+### Known limitations of this implementation
+
+- The seed script **skips** existing employee codes. It does not fill missing salaries, remove extra rows, or reset the database.
+- Employee-detail “current compensation” uses loaded salary history. The as-of HTTP API exists and is tested; the panel does not call it yet.
+- Correction history lists **UPDATE** audits only. CREATE events are omitted on purpose.
+- No query timings are recorded for the 10,000-employee dataset ([`artifacts/performance.md`](artifacts/performance.md)).
+- Directory search is server-side ILIKE on five columns, with no dedicated search index.
+- The country–currency allow-list is an extra six-country rule, duplicated in backend and frontend.
+
+### Possible later improvements
+
+These would extend the product; they do not mean the current app is broken.
+
+- Wire the as-of endpoint into the employee-detail current-pay display.
+- Add a carefully scoped employee **status** update so HR can inactivate people in the UI.
+- Consider include-inactive analytics, clearly labeled, still without mixing currencies or frequencies.
+- Measure directory, search, and analytics at 10,000 employees before adding indexes or other optimizations.
+- If the app is ever served over HTTPS, set `SESSION_COOKIE_SECURE` and real `CSRF_TRUSTED_ORIGINS`.
+- **Planned, not implemented:** an AI-powered HR salary analytics chatbot. The HR Manager would ask natural-language questions (for example how active employees are paid by country or currency) and receive **validated** summaries, tables, or charts. Access would require the existing authenticated HR session. The assistant would call only **approved read-only analytics operations** (not ad-hoc SQL, salary writes, or seed/migrate). Queries would be validated before execution, and responses would avoid leaking sensitive salary data beyond what the HR Manager is already allowed to see. This is future work, not present in the current UI or API.
 
 ## Development approach
 
@@ -271,9 +300,3 @@ A **local** host `acme_salary` database was inspected on 2026-10-21 at 10,000 em
 - Use a dedicated test database and roll back test data; do not point tests at `acme_salary`.
 - Review AI-generated code and validate it through tests.
 - Commit incrementally. Record prompts and trade-offs under `artifacts/` when they occur.
-
-## Open decisions
-
-1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`)
-2. Audit retention and administrative access policy
-3. Items listed as future enhancements in `docs/requirements.md` section 10

@@ -230,4 +230,5 @@ Not in this submission (unless already implemented above):
 - Include-inactive analytics.
 - Calling the as-of endpoint from the current-compensation UI.
 - Medians, pay bands, trend reports, and monthly ×12 annualization.
-- CSV export, currency conversion, payroll, tax, attendance, and natural-language analytics.
+- CSV export, currency conversion, payroll, tax, attendance, and natural-language analytics in the **current** product.
+- **Planned, not implemented:** an AI-powered HR salary analytics chatbot. Authenticated HR Manager sessions could ask natural-language compensation questions and receive validated summaries, tables, or charts. The assistant would be limited to approved, **read-only** analytics operations (not arbitrary SQL, salary mutations, or administrative scripts). Incoming questions would be validated before any data access, and answers would not expose salary data beyond the HR Manager’s existing authorization. This is future scope, not a current API or UI.
