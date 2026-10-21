@@ -4,7 +4,7 @@
 
 Build a web-based application that enables ACME's HR Manager to manage employee information, maintain salary records, and analyze compensation across the organization.
 
-The intended **capacity and demo scale** is approximately 10,000 employees across multiple countries. That is a target for pagination, seeding, and demonstration—not evidence that a 10,000-row database has already been loaded.
+The intended **capacity and demo scale** is approximately 10,000 employees across multiple countries. A **local** `localhost:5432/acme_salary` database was inspected at that scale (see section 9). That is not proof of a deployed environment.
 
 ## 2. Primary User
 
@@ -27,7 +27,7 @@ The application will centralize employee and salary information, preserve histor
 - Validate required fields and prevent duplicate employee IDs (`employee_code`).
 - Support pagination when browsing large employee datasets (`limit` / `offset`).
 - Authorized callers may **create** employees through the HTTP API. This submission does **not** include an employee-create UI or an employee-update API/UI.
-- The directory UI may filter the **currently loaded page** by text and employment status. That is not dataset-wide search.
+- `GET /api/v1/employees` supports optional dataset-wide `q` (case-insensitive substring on employee code, name, country, department, and job title; `%`, `_`, and `\` are literals) and optional `status` (`ACTIVE` or `INACTIVE`; omit / empty / `ALL` leaves status unfiltered). Filters apply before `limit`/`offset`; `total` is the match count. The directory UI sends those parameters and resets pagination when they change.
 
 ### 4.2 Salary Management
 
@@ -87,8 +87,8 @@ The application will centralize employee and salary information, preserve histor
 ### 4.5 Data Seeding
 
 - Provide a repeatable seed script of synthetic employees and associated salary data (no real personal data). Seeded salaries use the country–currency allow-list in section 4.2.
-- Local default `--count` is **1,000** for safer development. The assessment/demo environment is intended to be seeded with **10,000** (`--count 10000`). Do not claim a 10,000-row database exists until that run is recorded.
-- Repeated execution must not unintentionally duplicate employee codes.
+- Local default `--count` is **1,000** for safer development. `--count 10000` is supported. A verified **local** demo profile is recorded in section 9; that is not a deployed-host claim.
+- Repeated execution skips existing employee codes and must not unintentionally duplicate them. Skipping codes does **not** reconcile missing salaries or delete extra rows.
 - Document how to run the script.
 
 ### 4.6 Access Control
@@ -113,8 +113,8 @@ The application will centralize employee and salary information, preserve histor
 
 ### 5.2 Performance
 
-- The application is designed so a **demo-scale** dataset of approximately 10,000 employees can be listed without loading the entire dataset into the frontend. That is a design target, not a recorded benchmark or a claim that 10,000 rows are already seeded.
-- Employee listing must use pagination so the frontend does not load the entire dataset. Directory search in this submission is page-local, not a server-side dataset query.
+- The application is designed so a **demo-scale** dataset of approximately 10,000 employees can be listed without loading the entire dataset into the frontend. Pagination is implemented; no query-timing benchmark is recorded here.
+- Employee listing must use pagination so the frontend does not load the entire dataset. Directory search and status filters are server-side (`q`, `status`) over the full employee table.
 - Analytics must use appropriate database queries and avoid unnecessary retrieval of entire datasets into application memory.
 
 ### 5.3 Reliability and Data Integrity
@@ -159,7 +159,7 @@ The initial version will not include:
 - AI-powered natural-language analytics.
 - Hourly salary records or conversions requiring working-hours assumptions.
 - Currency conversion using external exchange rates.
-- Employee-update API/UI, employee-create UI, dataset-wide search, include-inactive analytics, monthly ×12 annualization, and extra analytics (median, pay bands, trends). See section 10.
+- Employee-update API/UI, employee-create UI, include-inactive analytics, monthly ×12 annualization, and extra analytics (median, pay bands, trends). See section 10.
 
 These features are excluded or deferred to keep this submission focused on employee information, salary history, and honest compensation grouping.
 
@@ -168,7 +168,7 @@ These features are excluded or deferred to keep this submission focused on emplo
 The application will be considered functionally complete for **this submission** when:
 
 1. Authorized HR users can view employees and list them with pagination. Create is available on the HTTP API (no create/update UI required).
-2. The directory can page through a large seeded dataset. Any search/status filter is page-local and labeled as such.
+2. The directory can page through a large seeded dataset. Search (`q`) and employment-status (`status`) filters are dataset-wide and combine with AND.
 3. Duplicate employee IDs and invalid employee or salary data are rejected.
 4. Salary changes preserve historical records and effective dates.
 5. The system can identify the applicable salary for a specified date (HTTP as-of). The employee-detail current-pay panel may derive that from loaded history rather than calling as-of.
@@ -176,7 +176,7 @@ The application will be considered functionally complete for **this submission**
 7. Compensation analytics calculate results from stored data using the defined business rules.
 8. Salary analytics keep currency and pay frequency separate (no ×12 annualization, no FX mix).
 9. Analytics apply explicit rules for reporting dates, **active** employment status, and missing salary records.
-10. The seed script can populate about 10,000 synthetic employees (`--count 10000`). Local default remains 1,000 until the demo database is seeded at 10,000.
+10. The seed script can populate about 10,000 synthetic employees (`--count 10000`). Local default remains 1,000. A verified local 10,000-employee database is recorded in section 9.
 11. Core functionality is covered by meaningful, fast, deterministic tests (backend pytest; frontend Vitest for a small high-value set).
 12. The project includes setup, testing, and seeding documentation. Deployment documentation is complete once deploy steps have been run.
 13. Every salary creation and update generates an audit entry (action, before/after values, responsible user, timestamp, reason where applicable). The correction-history UI lists **UPDATE** audits only.
@@ -189,7 +189,7 @@ The application will be considered functionally complete for **this submission**
 20. Login issues a session cookie and a session-bound CSRF cookie only after trusted-origin checks and successful credential verification. Logout requires a valid session and CSRF token, revokes the current session, and clears both cookies.
 21. Credentials, the CSRF signing secret, and trusted origins are supplied through configuration rather than committed source.
 
-Progress against these criteria, including unfinished **release** work (deploy, 10,000-employee demo seed, demo video), is recorded in section 9.
+Progress against these criteria, including unfinished **release** work (deploy, demo video), is recorded in section 9.
 
 ## 8. Success Criteria
 
@@ -203,7 +203,7 @@ This section records the repository against the submission scope above.
 
 **Implemented (product)**
 
-- Employee persistence and HTTP APIs to **create**, fetch by id, and **list** employees with pagination (`limit`/`offset`). Session required; create also requires CSRF. There is **no** employee update (PATCH/PUT) API and **no** employee-create UI.
+- Employee persistence and HTTP APIs to **create**, fetch by id, and **list** employees with pagination (`limit`/`offset`) and optional `q` / `status` filters. Session required; create also requires CSRF. There is **no** employee update (PATCH/PUT) API and **no** employee-create UI.
 - Salary HTTP APIs (session required). Create and correction also require CSRF (`acme_csrf` cookie plus `X-CSRF-Token`):
   - `POST /api/v1/employees/{employee_id}/salaries` — create a salary for a new effective date. Country–currency allow-list validation always runs; unsupported combinations return HTTP 422.
   - `GET /api/v1/employees/{employee_id}/salaries` — salary history, newest `effective_from` first.
@@ -211,24 +211,22 @@ This section records the repository against the submission scope above.
   - `PATCH /api/v1/employees/{employee_id}/salaries/{salary_id}` — correct an existing row (non-blank reason). Updates the same record and writes an UPDATE audit. Keeping that row’s `effective_from` succeeds; moving onto another of the same employee’s dates returns 409. Country–currency validation runs when the currency **changes**; a correction may retain a legacy currency. Tests that encode date cases include `test_correct_salary_keeps_existing_effective_date` and `test_correct_salary_duplicate_effective_date_returns_409`. This status section does not record a test run.
   - `GET /api/v1/employees/{employee_id}/salary-corrections` — **UPDATE** audit rows only (newest `changed_at` first). CREATE audits are not returned.
   - `GET /api/v1/analytics/compensation?date=YYYY-MM-DD` — **active-employee** analytics (session required; GET has no CSRF header). Groups by currency and pay frequency. Does not convert currency or mix monthly with annual amounts.
-- React + TypeScript + Vite UI: login and logout; paginated directory with **page-local** search/status filter (labeled “Search this page”); employee details; add/correct salary; salary history; UPDATE-only correction history; compensation analytics (reporting date, active headcount, salary groups). Employee-detail “current compensation” is computed from loaded history, not from the as-of endpoint. Vite proxies `/api` to FastAPI in development. After a successful salary POST or PATCH, a later history-refresh failure is shown as stale lists, not as a failed write. A **401** from a protected API request returns the UI to login. A login **401** remains invalid credentials. HTTP **403** and network failures do not automatically clear the session.
+- React + TypeScript + Vite UI: login and logout; paginated directory with **server-side** search (`q`) and status (`status`) over the full employee dataset (offset resets when either changes); employee details; add/correct salary; salary history; UPDATE-only correction history; compensation analytics (reporting date, active headcount, salary groups). Employee-detail “current compensation” is computed from loaded history, not from the as-of endpoint. Vite proxies `/api` to FastAPI in development. After a successful salary POST or PATCH, a later history-refresh failure is shown as stale lists, not as a failed write. A **401** from a protected API request returns the UI to login. A login **401** remains invalid credentials. HTTP **403** and network failures do not automatically clear the session.
 - One configured HR Manager: HttpOnly `acme_session`, session-bound `acme_csrf`, trusted-origin login, logout revocation.
-- Repeatable seed (`backend/scripts/seed_dev_data.py`): default **1,000** on `acme_salary` only; refuses `acme_test`; `--count 10000` is supported. A 10,000-row **database** is not claimed until that seed is run and recorded.
+- Repeatable seed (`backend/scripts/seed_dev_data.py`): default **1,000** on `acme_salary` only; refuses `acme_test`; `--count 10000` is supported. Existing `employee_code` values are skipped (no salary repair). **Verified local demo (2026-10-21, not deployed):** `localhost:5432/acme_salary` at Alembic `0004_create_user_sessions` held 10,000 employees (`EMP-000001`–`EMP-010000`), 18,000 salary records, 18,000 `CREATE` audit records, and 1,000 employees with no salary records.
 - `GET /health` is public.
 - Backend tests against derived `acme_test` (savepoint isolation). Frontend Vitest is **committed** (`npm test` / `vitest run` in `frontend/package.json`, plus `npm run lint` and `npm run build`). This section does not claim those commands were re-run after the implementation commits.
 
 **Remaining release tasks (not product-scope changes)**
 
-- Seed the assessment/demo database with 10,000 employees.
-- Deployment, production `SESSION_COOKIE_SECURE` / trusted origins, and a recorded demo.
-- Document verified migrate/run commands in the README after those commands have been executed successfully.
+- Deployment, production `SESSION_COOKIE_SECURE` / trusted origins, and a recorded demo. A local 10,000-employee inspection does not prove these.
+- Keep README migrate/run commands aligned with the repository-root `.env` working directory (see README). This is not a claim that production migrate steps have been executed.
 
 ## 10. Future enhancements
 
 Not in this submission (unless already implemented above):
 
 - Employee-update API/UI and employee-create UI.
-- Dataset-wide (server-side) employee search and filter.
 - Include-inactive analytics.
 - Calling the as-of endpoint from the current-compensation UI.
 - Medians, pay bands, trend reports, and monthly ×12 annualization.

@@ -228,9 +228,9 @@ The initial database is designed for approximately 10,000 employees. Performance
 `backend/scripts/seed_dev_data.py` seeds the **application** database. Default `--count` is **1,000** employees (not 10,000). It reads `DATABASE_URL`, requires database name `acme_salary`, and refuses `acme_test` / `TEST_DATABASE_URL`. It does not run migrations or insert sessions.
 
 - Synthetic data only; no real employee information.
-- Repeated execution skips existing `employee_code` values.
+- Repeated execution skips existing `employee_code` values. It does not insert missing salaries for those codes or delete extra rows.
 - Generates valid employee, salary, currency, frequency, and effective-date values, including mixed statuses and some future-dated or missing salaries depending on the generator.
-- A 10,000-employee seed remains the product requirement. It has not been run as a recorded benchmark (see `artifacts/performance.md`). URL-identity safety tests live in `backend/tests/test_seed_dev_data.py`.
+- A **local** `acme_salary` database was inspected at 10,000 employees / 18,000 salaries / 18,000 `CREATE` audits / 1,000 employees without salaries (`docs/requirements.md` section 9). That is not a query-timing benchmark (`artifacts/performance.md`) and not a deployed-host claim. URL-identity safety tests live in `backend/tests/test_seed_dev_data.py`.
 
 ## 11. Database Migrations
 
@@ -262,7 +262,7 @@ Database-related tests must cover:
 - Required update reasons.
 - Transaction rollback when audit creation fails.
 - Preservation of salary and audit history.
-- Seed target URL guards (`test_seed_dev_data.py`). Full 10,000-employee seed execution is still pending.
+- Seed target URL guards (`test_seed_dev_data.py`). A local 10,000-employee demo profile is recorded in `docs/requirements.md` section 9; pytest does not load that dataset.
 - Compensation analytics for missing salaries, active employment status, frequency, and currencies (`GET /api/v1/analytics/compensation`).
 - Correction-history listing of UPDATE audits, scoped by employee (`list_employee_salary_corrections`).
 - Session token hashing (raw token not persisted), expiry, and revocation.

@@ -8,18 +8,18 @@ Build a web application so ACME’s HR Manager can manage employee and salary da
 
 ## Scope
 
-This submission is a backend and UI for **one HR Manager**: employee records (view and paginated list), salary history and corrections, compensation analytics from stored data, a repeatable synthetic seed (local default 1,000; the assessment/demo environment is **intended** to use 10,000), and automated tests for core behavior. **Deployment and a demo video are outstanding release tasks**; they are not done.
+This submission is a backend and UI for **one HR Manager**: employee records (view and paginated list with optional server-side search and status filters), salary history and corrections, compensation analytics from stored data, a repeatable synthetic seed (local default 1,000; a **local** 10,000-employee `acme_salary` database has been inspected — not a deployed host), and automated tests for core behavior. **Deployment and a demo video are outstanding release tasks**; they are not done.
 
 Access is backend-enforced session authentication for that single HR Manager, with CSRF protection on state-changing browser requests. The configured audit identity recorded on salary changes is not the same thing as the login username. Multi-user administration and extra roles are out of scope.
 
 ## Key features
 
 - View employees (identifier, name, country, department, job title, active/inactive status) with pagination. Create is available on the HTTP API; there is no employee-create or employee-update UI in this submission.
-- Directory search and status filters apply to the **currently loaded page only**, which the UI states. They are not dataset-wide.
+- Directory search (`q`) and employment-status (`status`) filters run on the server against the full employee dataset, then paginate (`limit`/`offset`). Invalid `status` is rejected; omit `status` (or empty/`ALL`) to leave status unfiltered.
 - Record salaries (amount, currency, monthly or annual frequency, effective date). Ordinary changes add a new effective date; corrections update an existing date, require a reason, and keep an audit trail.
 - Resolve the salary that applies on a chosen date (latest `effective_from` on or before that date). Future-dated changes do not apply early. The as-of HTTP API exists; the employee-detail “current compensation” panel uses salary history already loaded in the browser.
 - Analyze compensation from persisted records for **active** employees: keep currencies and pay frequencies separate (do not annualize monthly pay by ×12, and do not mix incomparable amounts). Missing salaries are counted separately (not treated as zero).
-- Seed synthetic employees and related salaries without using real personal data. Local default is 1,000. The submitted/demo database is intended to use `--count 10000`.
+- Seed synthetic employees and related salaries without using real personal data. Local default is 1,000; `--count 10000` is supported. Existing codes are skipped (the script does not repair salaries). A verified local 10k/18k profile is recorded in [`requirements.md`](requirements.md) section 9.
 
 Progress versus remaining release work is recorded in [`requirements.md`](requirements.md) section 9.
 
@@ -28,7 +28,6 @@ Progress versus remaining release work is recorded in [`requirements.md`](requir
 | Left out | Why |
 |---|---|
 | Employee update API/UI; employee-create UI | Seed plus view/list is enough to manage salaries on a large dataset; extra HRIS CRUD can wait. |
-| Dataset-wide employee search | Pagination already supports browsing 10,000 rows; a search API was not invented without a list-filter contract. |
 | Include-inactive analytics; monthly ×12 annualization; medians, pay bands, trends | Mixing inactive staff, monthly with annual, or currencies would misstate pay. Groups stay explicit. |
 | Payroll, disbursement, tax, and statutory deductions | Those are payment operations, not salary *records* and analysis. |
 | Attendance, leave, recruitment, performance, employee self-service | Different products; they would delay a focused HR Manager tool. |

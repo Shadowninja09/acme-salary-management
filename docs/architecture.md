@@ -121,7 +121,7 @@ Responsibilities:
 The React application lives in `frontend/`. Implemented workflows:
 
 - HR Manager login and logout.
-- Employee directory with `limit`/`offset` pagination. Search and employment-status controls filter the **current page of API results**, not the full dataset (there is no search query on `GET /api/v1/employees`).
+- Employee directory with `limit`/`offset` pagination. Search and employment-status controls call `GET /api/v1/employees` with optional `q` and `status` (dataset-wide; `total` is the filtered count). Changing either control resets `offset` to 0.
 - Employee details, salary history, add salary, and salary correction (reason required). After a successful correction, history and correction history refresh and the correction form closes. If that refresh fails after a successful POST or PATCH, the UI treats it as a refresh problem (stale lists), not as a failed write. “Current compensation” is derived in the client from the loaded history (latest `effective_from` on or before today’s local date), not from `GET .../salaries/as-of`.
 - Correction history table from `GET /api/v1/employees/{id}/salary-corrections` (**UPDATE** audits only; CREATE events are omitted). Displays `changed_at`, old/new snapshots, reason, and `changed_by` from the API. The UI does not send `changed_by`.
 - Compensation analytics: reporting date, **active** headcount, employees with/without applicable salary, and salary groups overall, by department, and by country (currency and pay frequency on every group). Include-inactive filtering is deferred.
@@ -351,8 +351,8 @@ The design will use:
 - Database-level filtering and pagination for employee listings.
 - Database constraints and application validation to protect data integrity.
 - Employees should ordinarily be deactivated rather than deleted. Salary records must not be deleted through ordinary application operations, and audit history must be preserved. Foreign-key deletion policies must prevent cascading deletion from destroying salary or audit history.
-- Indexes follow actual query patterns: paginated employee lists (`limit`/`offset`), salary history and as-of lookups by employee and `effective_from`, and audit-history retrieval. Directory text search is page-local in the UI and is not a database search API.
-- A development seed script exists at `backend/scripts/seed_dev_data.py`. Default `--count` is **1,000** employees. It uses `DATABASE_URL`, targets database name `acme_salary` only, and refuses `acme_test`. Repeatable execution skips existing employee codes. The assessment/demo environment is intended to use `--count 10000`; that run is a release task, not the local default.
+- Indexes follow actual query patterns: paginated employee lists (`limit`/`offset`, plus optional `q` ILIKE and `status` equality), salary history and as-of lookups by employee and `effective_from`, and audit-history retrieval. No extra search index has been added.
+- A development seed script exists at `backend/scripts/seed_dev_data.py`. Default `--count` is **1,000** employees. It uses `DATABASE_URL`, targets database name `acme_salary` only, and refuses `acme_test`. Repeatable execution skips existing employee codes and does not repair salaries. `--count 10000` is supported. A verified **local** 10,000-employee `acme_salary` profile is recorded in `docs/requirements.md` section 9 (not a deployed host).
 - The detailed schema, constraints, index selection, deletion policies, and transaction boundaries are documented in `docs/database-design.md`.
 
 ## 10. Authentication and Authorization
@@ -486,13 +486,13 @@ Settled by the current implementation:
 - Session authentication, CSRF double-submit, trusted-origin login checks, and configuration of secrets/origins.
 - `get_db` commit/rollback; tests against derived `acme_test` with savepoints.
 - Audit snapshots store `amount` (decimal string), `currency`, `pay_frequency`, and `effective_from` (ISO date).
-- Employee list pagination uses `limit` (1–100, default 50) and `offset`.
+- Employee list pagination uses `limit` (1–100, default 50) and `offset`, with optional `q` and `status`.
 
 Still open (release or future, not current product gaps):
 
 1. Deployment target and production configuration (`SESSION_COOKIE_SECURE`, real `CSRF_TRUSTED_ORIGINS`).
 2. Audit retention and administrative access policy.
-3. Whether a later version should add dataset-wide search, employee update, include-inactive analytics, as-of in the current-pay UI, medians/bands/trends, extra salary frequencies, or currency conversion (`docs/requirements.md` section 10).
-4. Seeding the assessment/demo database with `--count 10000` (script already supports it; local default remains 1,000).
+3. Whether a later version should add employee update, include-inactive analytics, as-of in the current-pay UI, medians/bands/trends, extra salary frequencies, or currency conversion (`docs/requirements.md` section 10).
+4. Production deployment (`SESSION_COOKIE_SECURE`, real trusted origins) and a demo video. A local `--count 10000` inspection is not deployment evidence. Local seed default remains 1,000.
 
 Bulk salary-change workflows are not part of this submission. If introduced later, they should support safe retries, progress tracking, and manageable transaction sizes.
