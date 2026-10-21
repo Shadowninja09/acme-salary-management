@@ -213,10 +213,12 @@ textarea:focus-visible {
 
 .app-shell {
   min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   align-items: stretch;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .app-content,
@@ -240,6 +242,8 @@ textarea:focus-visible {
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .brand {
@@ -325,6 +329,8 @@ textarea:focus-visible {
 .app-content {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .app-main {
@@ -335,14 +341,31 @@ textarea:focus-visible {
 }
 
 .login-page {
+  box-sizing: border-box;
+  width: 100%;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: var(--space-6) var(--space-4);
 }
 
-.login {
+.login-page > .status-banner {
   width: min(24rem, 100%);
+}
+
+.login-stack {
+  width: min(24rem, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.login {
+  width: 100%;
   padding: 1.75rem 1.6rem 1.5rem;
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -436,6 +459,10 @@ textarea:focus-visible {
   margin-bottom: var(--space-6);
 }
 
+.analytics-body > .chart-block {
+  margin-bottom: var(--space-6);
+}
+
 .kpi-card {
   padding: 0.95rem 1.05rem;
   background: var(--bg-surface);
@@ -460,19 +487,15 @@ textarea:focus-visible {
   color: var(--text);
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.kpi-coverage {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16.5rem, 19rem);
-  gap: var(--space-3);
-  margin-bottom: var(--space-6);
-  align-items: start;
-  min-width: 0;
-}
-
-.kpi-coverage .kpi-row {
-  margin-bottom: 0;
+.analytics-section-copy {
+  margin: 0 0 0.85rem;
+  max-width: 42rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: left;
 }
 
 .coverage-card {
@@ -485,7 +508,8 @@ textarea:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.85rem 1.1rem;
+  justify-content: center;
+  gap: 0.85rem 1.5rem;
   min-width: 0;
 }
 
@@ -538,7 +562,9 @@ textarea:focus-visible {
   padding: 0;
   list-style: none;
   min-width: 0;
-  flex: 1 1 8.5rem;
+  flex: 0 1 auto;
+  width: max-content;
+  max-width: 100%;
 }
 
 .coverage-legend li {
@@ -554,6 +580,7 @@ textarea:focus-visible {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+  text-align: right;
 }
 
 .coverage-swatch {
@@ -735,6 +762,7 @@ textarea:focus-visible {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
   line-height: 1.25;
+  text-align: right;
 }
 
 .salary-range-svg {
@@ -1503,6 +1531,14 @@ textarea:focus-visible {
 @media (max-width: 960px) {
   .app-shell {
     flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .app-content {
+    overflow: visible;
   }
 
   .app-sidebar {
@@ -1515,6 +1551,7 @@ textarea:focus-visible {
     padding: 0.75rem 1rem;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+    overflow: visible;
   }
 
   .app-nav {
@@ -1533,7 +1570,6 @@ textarea:focus-visible {
   }
 
   .kpi-row,
-  .kpi-coverage,
   .chart-grid,
   .salary-charts,
   .audit-grid {

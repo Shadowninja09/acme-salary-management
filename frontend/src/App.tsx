@@ -114,7 +114,7 @@ function App() {
   if (session === 'anonymous') {
     return (
       <div className="login-page">
-        <div>
+        <div className="login-stack">
           {sessionError ? (
             <p className="status-banner status-banner-error" role="alert">
               {sessionError}

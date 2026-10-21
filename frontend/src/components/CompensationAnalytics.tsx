@@ -169,27 +169,25 @@ export function CompensationAnalyticsView() {
             </p>
           ) : null}
 
-          <div className="kpi-coverage">
-            <div className="kpi-row">
-              <article className="kpi-card">
-                <p className="kpi-label">Active Employees</p>
-                <p className="kpi-value">{formatCount(result.active_employee_count)}</p>
-              </article>
-              <article className="kpi-card">
-                <p className="kpi-label">With Salary</p>
-                <p className="kpi-value">{formatCount(result.active_employees_with_salary)}</p>
-              </article>
-              <article className="kpi-card">
-                <p className="kpi-label">Without Salary</p>
-                <p className="kpi-value">{formatCount(result.active_employees_without_salary)}</p>
-              </article>
-            </div>
-            <SalaryCoverageChart
-              active={result.active_employee_count}
-              withSalary={result.active_employees_with_salary}
-              withoutSalary={result.active_employees_without_salary}
-            />
+          <div className="kpi-row">
+            <article className="kpi-card">
+              <p className="kpi-label">Active Employees</p>
+              <p className="kpi-value">{formatCount(result.active_employee_count)}</p>
+            </article>
+            <article className="kpi-card">
+              <p className="kpi-label">With Salary</p>
+              <p className="kpi-value">{formatCount(result.active_employees_with_salary)}</p>
+            </article>
+            <article className="kpi-card">
+              <p className="kpi-label">Without Salary</p>
+              <p className="kpi-value">{formatCount(result.active_employees_without_salary)}</p>
+            </article>
           </div>
+          <SalaryCoverageChart
+            active={result.active_employee_count}
+            withSalary={result.active_employees_with_salary}
+            withoutSalary={result.active_employees_without_salary}
+          />
 
           <div className="chart-grid">
             <CountBarChart
@@ -208,6 +206,10 @@ export function CompensationAnalyticsView() {
 
           <section className="chart-block" aria-labelledby="salary-charts-heading">
             <h2 id="salary-charts-heading">Salary by currency and pay frequency</h2>
+            <p className="analytics-section-copy">
+              Amounts are grouped by currency and pay frequency. Figures that use
+              different currencies or frequencies are not directly comparable.
+            </p>
             {result.salary_summary.length === 0 ? (
               <p className="empty-note" role="status">
                 No applicable salaries on this reporting date.
