@@ -24,4 +24,6 @@ export type EmployeeList = {
 export type EmployeeListQuery = {
   limit: number
   offset: number
+  q?: string
+  status?: EmploymentStatus
 }

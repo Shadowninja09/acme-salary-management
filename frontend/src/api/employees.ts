@@ -7,14 +7,18 @@ export function listEmployees(
   query: EmployeeListQuery,
   signal?: AbortSignal,
 ): Promise<EmployeeList> {
-  return apiGet<EmployeeList>(
-    EMPLOYEES_PATH,
-    {
-      limit: String(query.limit),
-      offset: String(query.offset),
-    },
-    signal,
-  )
+  const params: Record<string, string> = {
+    limit: String(query.limit),
+    offset: String(query.offset),
+  }
+  const search = query.q?.trim()
+  if (search) {
+    params.q = search
+  }
+  if (query.status) {
+    params.status = query.status
+  }
+  return apiGet<EmployeeList>(EMPLOYEES_PATH, params, signal)
 }
 
 export function getEmployee(

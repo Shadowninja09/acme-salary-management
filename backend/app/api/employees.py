@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_authenticated_session, require_csrf_token
 from app.db.session import get_db
+from app.models.employee import EmploymentStatus
 from app.schemas.employee import EmployeeCreate, EmployeeList, EmployeeRead
 from app.services.employee import (
     DuplicateEmployeeCodeError,
@@ -10,6 +11,23 @@ from app.services.employee import (
     get_employee_by_id,
     list_employees,
 )
+
+_UNFILTERED_STATUS_VALUES = frozenset({"", "ALL"})
+
+
+def _employment_status_filter(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    value = raw.strip()
+    if value in _UNFILTERED_STATUS_VALUES:
+        return None
+    try:
+        return EmploymentStatus(value).value
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid employment status",
+        ) from None
 
 router = APIRouter(
     prefix="/api/v1/employees",
@@ -43,8 +61,16 @@ def list_employees_endpoint(
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    q: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
 ) -> EmployeeList:
-    items, total = list_employees(db, limit=limit, offset=offset)
+    items, total = list_employees(
+        db,
+        limit=limit,
+        offset=offset,
+        q=q,
+        employment_status=_employment_status_filter(status_filter),
+    )
     return EmployeeList(
         items=[EmployeeRead.model_validate(item) for item in items],
         total=total,

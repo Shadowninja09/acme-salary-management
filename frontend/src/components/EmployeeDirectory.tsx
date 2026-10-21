@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
 import { listEmployees } from '../api/employees'
 import {
   EMPLOYMENT_STATUSES,
-  type Employee,
   type EmployeeList,
   type EmploymentStatus,
 } from '../types/employee'
@@ -11,22 +10,6 @@ import {
 const PAGE_SIZE = 50
 
 type StatusFilter = 'ALL' | EmploymentStatus
-
-function matchesSearch(employee: Employee, query: string): boolean {
-  if (!query) {
-    return true
-  }
-  const haystack = [
-    employee.employee_code,
-    employee.full_name,
-    employee.country,
-    employee.department,
-    employee.job_title,
-  ]
-    .join(' ')
-    .toLowerCase()
-  return haystack.includes(query)
-}
 
 function formatStatus(status: EmploymentStatus): string {
   return status === 'ACTIVE' ? 'Active' : 'Inactive'
@@ -60,7 +43,12 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
       setError(null)
       try {
         const result = await listEmployees(
-          { limit: PAGE_SIZE, offset },
+          {
+            limit: PAGE_SIZE,
+            offset,
+            ...(search.trim() ? { q: search.trim() } : {}),
+            ...(statusFilter === 'ALL' ? {} : { status: statusFilter }),
+          },
           controller.signal,
         )
         if (!cancelled) {
@@ -86,17 +74,9 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
       cancelled = true
       controller.abort()
     }
-  }, [offset])
+  }, [offset, search, statusFilter])
 
-  const visibleEmployees = useMemo(() => {
-    const items = list?.items ?? []
-    const query = search.trim().toLowerCase()
-    return items.filter((employee) => {
-      const statusOk =
-        statusFilter === 'ALL' || employee.employment_status === statusFilter
-      return statusOk && matchesSearch(employee, query)
-    })
-  }, [list, search, statusFilter])
+  const visibleEmployees = list?.items ?? []
 
   const total = list?.total ?? 0
   const limit = list?.limit ?? PAGE_SIZE
@@ -114,21 +94,24 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
         <div>
           <h1 id="directory-heading">Employees</h1>
           <p>
-            Paginated directory of HR records. Search and status filters apply to
-            the current page only.
+            Paginated directory of HR records. Search and status filters match
+            the full employee dataset.
           </p>
         </div>
       </header>
 
       <div className="directory-tools">
         <label className="search-field" htmlFor="employee-search">
-          <span>Search this page</span>
+          <span>Search employees</span>
           <input
             id="employee-search"
             name="search"
             type="search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setOffset(0)
+            }}
             autoComplete="off"
             placeholder="Name, code, country, department, or title"
           />
@@ -138,7 +121,10 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
             type="button"
             className={statusFilter === 'ALL' ? 'is-active' : undefined}
             aria-pressed={statusFilter === 'ALL'}
-            onClick={() => setStatusFilter('ALL')}
+            onClick={() => {
+              setStatusFilter('ALL')
+              setOffset(0)
+            }}
           >
             All
           </button>
@@ -148,7 +134,10 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
               type="button"
               className={statusFilter === status ? 'is-active' : undefined}
               aria-pressed={statusFilter === status}
-              onClick={() => setStatusFilter(status)}
+              onClick={() => {
+                setStatusFilter(status)
+                setOffset(0)
+              }}
             >
               {formatStatus(status)}
             </button>
@@ -170,17 +159,9 @@ export function EmployeeDirectory({ onSelectEmployee }: EmployeeDirectoryProps) 
 
       {!loading && !error && list && list.items.length === 0 ? (
         <p className="empty-note" role="status">
-          No employees are available.
-        </p>
-      ) : null}
-
-      {!loading &&
-      !error &&
-      list &&
-      list.items.length > 0 &&
-      visibleEmployees.length === 0 ? (
-        <p className="empty-note" role="status">
-          No employees on this page match the current search or status filter.
+          {search.trim() || statusFilter !== 'ALL'
+            ? 'No employees match the current filters.'
+            : 'No employees are available.'}
         </p>
       ) : null}
 
