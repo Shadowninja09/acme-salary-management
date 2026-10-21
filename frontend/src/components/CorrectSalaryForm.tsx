@@ -253,7 +253,7 @@ export function CorrectSalaryForm({
           type="submit"
           disabled={submitting || writeSucceeded}
         >
-          {submitting ? 'Saving…' : 'Save correction'}
+          {submitting ? 'Saving…' : 'Save changes'}
         </button>
         <button
           type="button"

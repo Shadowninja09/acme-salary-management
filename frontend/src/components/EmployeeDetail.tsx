@@ -335,7 +335,7 @@ export function EmployeeDetail({ employeeId, onBack }: EmployeeDetailProps) {
                                 onClick={() => startCorrection(salary.id)}
                                 aria-pressed={isSelected}
                               >
-                                Correct
+                                Edit salary
                               </button>
                             </td>
                           </tr>

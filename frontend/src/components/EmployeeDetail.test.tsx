@@ -169,9 +169,9 @@ test('correction PATCH success then refresh failure does not report a failed cor
   render(<EmployeeDetail employeeId={EMPLOYEE_ID} onBack={() => undefined} />)
 
   expect(await screen.findByRole('heading', { name: 'Priya Shah' })).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: 'Correct' }))
+  await user.click(screen.getByRole('button', { name: 'Edit salary' }))
   await user.type(screen.getByLabelText('Reason'), 'Payroll adjustment')
-  await user.click(screen.getByRole('button', { name: 'Save correction' }))
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
   expect(
     await screen.findByText(
@@ -179,7 +179,7 @@ test('correction PATCH success then refresh failure does not report a failed cor
     ),
   ).toBeInTheDocument()
   expect(screen.queryByText('The salary could not be corrected. Try again.')).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Save correction' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
 
   const patchCalls = fetchMock.mock.calls.filter(([input, init]) => {
     const { method } = requestParts(input as RequestInfo, init as RequestInit)
@@ -210,9 +210,9 @@ test('correction PATCH failure still shows a write error and does not claim succ
   render(<EmployeeDetail employeeId={EMPLOYEE_ID} onBack={() => undefined} />)
 
   expect(await screen.findByRole('heading', { name: 'Priya Shah' })).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: 'Correct' }))
+  await user.click(screen.getByRole('button', { name: 'Edit salary' }))
   await user.type(screen.getByLabelText('Reason'), 'Payroll adjustment')
-  await user.click(screen.getByRole('button', { name: 'Save correction' }))
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
   expect(
     await screen.findByText(
@@ -224,5 +224,5 @@ test('correction PATCH failure still shows a write error and does not claim succ
       'The salary change was saved, but the history lists could not be updated. This page may be out of date.',
     ),
   ).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Save correction' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
 })
