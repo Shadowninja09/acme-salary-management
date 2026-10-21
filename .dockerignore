@@ -1,0 +1,27 @@
+.git
+.gitignore
+.cursor
+**/.venv
+**/venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.coverage
+**/.mypy_cache
+**/.ruff_cache
+**/.turbo
+frontend/dist
+frontend/build
+.env
+.env.*
+!.env.example
+*.log
+logs
+tmp
+temp
+artifacts
+docs
+*.md
+!README.md
+Salary Management Assessment- Candidates.docx

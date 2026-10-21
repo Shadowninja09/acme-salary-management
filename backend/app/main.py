@@ -1,6 +1,9 @@
-from fastapi import FastAPI
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
@@ -78,3 +81,41 @@ def swagger_ui() -> HTMLResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def frontend_dist_dir() -> Path | None:
+    configured = os.environ.get("FRONTEND_DIST", "").strip()
+    path = Path(configured) if configured else _repository_root() / "frontend" / "dist"
+    if not (path / "index.html").is_file():
+        return None
+    return path.resolve()
+
+
+def _is_reserved_frontend_path(full_path: str) -> bool:
+    normalized = full_path.lstrip("/")
+    if normalized in {"health", "docs", "redoc", "openapi.json"}:
+        return True
+    return normalized == "api" or normalized.startswith("api/")
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def frontend_spa(full_path: str) -> FileResponse:
+    if _is_reserved_frontend_path(full_path):
+        raise HTTPException(status_code=404, detail="Not Found")
+    dist = frontend_dist_dir()
+    if dist is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if full_path in {"", "/"}:
+        return FileResponse(dist / "index.html")
+    candidate = (dist / full_path).resolve()
+    try:
+        candidate.relative_to(dist)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Not Found") from None
+    if candidate.is_file():
+        return FileResponse(candidate)
+    return FileResponse(dist / "index.html")

@@ -25,6 +25,10 @@ os.environ.setdefault(
     "test-only-csrf-signing-secret-value",
 )
 os.environ.setdefault("CSRF_TRUSTED_ORIGINS", '["https://hr.test"]')
+os.environ.setdefault(
+    "FRONTEND_DIST",
+    str(Path(__file__).resolve().parent / "_absent_frontend_dist"),
+)
 
 from argon2 import PasswordHasher, extract_parameters
 from argon2.exceptions import InvalidHashError
