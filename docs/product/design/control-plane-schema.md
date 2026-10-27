@@ -36,7 +36,7 @@ These restate ADR decisions. They are not new choices made by this document.
 - A company may have many users (ADR decision 4). Those users live in the tenant database (ADR decision 5).
 - There is no control-plane company membership and no company-selection login (ADR decision 5).
 - Employee, salary, salary-audit, company user, employee ID, password-hash, and refresh-session records stay in the tenant database (ADR decision 6). An employee ID is unique within its tenant.
-- The control plane stores the tenant registry, routing metadata, provisioning status, company access status, and platform-level operations. Company access status is `active` or `deactivated`. It is not the provisioning status. The control plane does not store company users, memberships, password hashes, or refresh sessions (ADR decision 7 and decision 15).
+- The control plane stores the tenant registry, routing metadata, provisioning status, company access status, and platform-level operations. Company access status is `onboard`, `active`, or `deactivated`. It is not the provisioning status. The control plane does not store company users, memberships, password hashes, or refresh sessions (ADR decision 7 and decision 15).
 - A valid JWT alone does not establish that the company or the employee is still authorized (ADR decision 19).
 
 ### Non-goals
@@ -44,8 +44,8 @@ These restate ADR decisions. They are not new choices made by this document.
 - Implementing the schema, Alembic revisions, or provisioning.
 - Approving the open choices in section 16.
 - Designing the tenant tables for company users, employee IDs, password hashes, or refresh sessions.
-- Storing employee `active` or `deactivated` status, the server-recorded employee deactivation timestamp, or the company’s immediate-revocation versus 12-hour document-only grace policy in this schema. Those belong to the tenant schema (ADR decisions 16–18). This document does not add a `grace_until` column.
-- Choosing the initial `access_status` of a newly ready company. ADR-001 does not decide that transition.
+- Storing `employment_status`, company users, or refresh sessions in this schema. Employee access is governed by `employment_status` in the tenant database (ADR decision 16). This schema does not add an employee `access_status` or a document-grace column.
+- Choosing who may change company `access_status`. The column itself is decided: `NOT NULL`, default `onboard`, values `onboard`, `active`, and `deactivated` (ADR decision 15).
 - Choosing platform-operator authentication.
 - Payroll, attendance, recruitment, self-service, or AI features.
 - Copying the current assessment database.
@@ -71,7 +71,7 @@ Verified from the current backend. This is assessment behavior, not V2 behavior.
 | Alembic head is `0004_create_user_sessions`. Pytest migrates only a database named `acme_test` | `backend/migrations/versions/`, `backend/app/core/test_database.py` |
 | The seed script writes only a database named `acme_salary` and refuses `acme_test` | `backend/scripts/seed_dev_data.py` |
 
-Limitations for V2: one shared database, one configured login, no tenant registry, no routing record, and no way to reject traffic because a company was suspended. The assessment `user_sessions` table is not a V2 refresh-session store. ADR decision 13 places refresh-token hashes in the tenant database. The global `employee_code` uniqueness above is the assessment rule. ADR decision 6 limits employee ID uniqueness to one tenant. V2 cookie names are not the assessment cookie names; cookie names are unresolved.
+Limitations for V2: one shared database, one configured login, no tenant registry, no routing record, and no way to reject traffic because a company was suspended. The assessment `user_sessions` table is not a V2 refresh-session store. ADR decision 13 places refresh-token digests in the tenant database. The global `employee_code` uniqueness above is the assessment rule. ADR decision 6 limits employee ID uniqueness to one tenant. V2 cookie names are not the assessment cookie names. Cookie names and `Path` remain unresolved. The assessment CSRF HMAC is current behavior, not the V2 token construction.
 
 ## 3. Constraints inherited from ADR-001
 
@@ -79,11 +79,11 @@ These are ADR decisions or ADR security rules. They are not current application 
 
 - Business data and company authentication data for a company live only in that company’s database (decisions 2, 5, and 6).
 - The control plane stores the tenant registry, routing metadata, provisioning status, company access status, and platform-level operations. Company access status is distinct from provisioning status. The control plane does not store company users, memberships, password hashes, or refresh sessions (decision 7 and decision 15).
-- A company-specific login URL identifies the tenant to resolve. There is no public company directory and no company-selection login. The URL is not authorization. The authenticated identity, the token’s tenant binding, the resolved tenant, and the selected tenant database must agree. A client-supplied tenant id or database name is never authorization (decision 8).
+- A company-specific login URL identifies the tenant to resolve. The initial deployment uses a tenant-specific subdomain under a shared domain. There is no public company directory and no company-selection login. The URL is not authorization. The authenticated identity, the token’s tenant binding, the resolved tenant, and the selected tenant database must agree. A client-supplied tenant id or database name is never authorization (decision 8).
 - Company login uses the company-assigned employee ID and password (decision 11). That check runs in the tenant database.
-- Access tokens are JWTs lasting 15 minutes. Refresh tokens are opaque random tokens lasting 7 days. Both use HttpOnly cookies (decision 12). Only refresh-token hashes are persisted, and only in the tenant database. Rotation and reuse detection are required (decision 13). The refresh-session table is not part of this schema.
-- Roles and permissions still apply inside the company. Database separation does not replace them (decision 9). The concrete role names and permission matrix are unresolved (ADR section 14 and section 16). They are tenant-local facts, not control-plane columns.
-- The control plane is authoritative for provisioning status and for company access status. The tenant database is authoritative for employee status and for the persisted employee deactivation time (ADR decisions 15–18). A valid JWT alone does not authorize a protected request (decision 19). A tenant that is not Ready receives no business traffic, including document-only grace. A ready company whose access status is `deactivated` is denied normal HRMS business APIs and document-only grace, even with an unexpired JWT. One tenant’s failure or deactivation does not by itself take another tenant’s database offline. Logout’s effect on an already-issued JWT, and the mechanism that invalidates the token itself, remain unresolved.
+- Access tokens are JWTs lasting 15 minutes, with the claims and RS256 signing rules in ADR decision 12. Refresh tokens are high-entropy opaque tokens lasting 7 days. Auth cookies use `HttpOnly`, `Secure`, and `SameSite=Lax` as the initial defaults. Prefer host-only cookies rather than a shared parent-domain cookie (decision 12). Only an HMAC-SHA-256 digest of the refresh token is persisted, using a server-side secret, and only in the tenant database. Rotation is required. Reuse of a rotated token revokes only its affected token family or session. There is no concurrency grace period. An employee may hold multiple independent active sessions. Store basic session and device metadata and `last_used`. Do not retain IP history by default (decision 13). Ordinary protected business requests are authenticated with the access token. A refresh token is used only at the refresh endpoint to issue a new access token, with rotation and reuse checks in the tenant database (decision 12). The refresh-session table is not part of this schema.
+- Roles and permissions still apply inside the company. Database separation does not replace them (decision 9). Load the current role from the tenant database. Do not trust a role embedded in the JWT. The concrete role names and permission matrix are unresolved (ADR section 14 and section 16). They are tenant-local facts, not control-plane columns.
+- The control plane is authoritative for provisioning status and for company access status (`onboard`, `active`, or `deactivated`). The tenant database is authoritative for `employment_status` (ADR decisions 15 and 16). A valid JWT alone does not authorize a protected request (decision 19). A tenant that is not Ready receives no business traffic. Company `deactivated` and provisioning status `suspended` both block normal HRMS access, even with an unexpired JWT. There is no document-access grace period (decision 17). One tenant’s failure or deactivation does not by itself take another tenant’s database offline. Protected requests read company and tenant status every time, with no short-lived status cache (decision 18). Logout revokes the current refresh session and clears auth cookies. The access JWT may remain valid until its 15-minute expiry.
 - Ordinary business connections must not use a PostgreSQL superuser. Runtime privileges are separate from the privileges that create databases or apply migrations (ADR section 7). How those non-runtime privileges are split is a proposal in section 11, not a second ADR decision.
 - Do not store plaintext database passwords. The ADR allows either a secret-manager reference or protected deployment configuration (ADR section 4). Do not expose credentials to the frontend or logs. Which product stores the secret, how it is injected, and how it rotates are unresolved. Company password hashes are not these database credentials.
 - A business database connection is bound to the selected tenant database. Pools are not shared across tenant database configurations. Pool size and total connections are bounded. Idle, suspended, or removed tenant pools are closed safely (ADR section 7). A failed request must not leave a connection checked out for another company. Numeric pool limits and idle timeouts are unresolved.
@@ -101,13 +101,13 @@ These are ADR decisions or ADR security rules. They are not current application 
 | `provisioning_attempts` | Proposed | One execution of a logical request. Earlier executions stay stored. |
 | `platform_audit_events` | Proposed, before privileged operations go live | Control-plane audit for tenant lifecycle and operator actions. Separate from tenant `salary_audit_logs`. |
 
-This proposal does not include `users`, `tenant_memberships`, or `user_sessions`. Those names are not control-plane tables. Company accounts and refresh-token hashes belong in the tenant schema. The assessment `user_sessions` table is historical and is not migrated into this database.
+This proposal does not include `users`, `tenant_memberships`, or `user_sessions`. Those names are not control-plane tables. Company accounts and refresh-token digests belong in the tenant schema. The assessment `user_sessions` table is historical and is not migrated into this database.
 
 These are not settled tables:
 
 - **Platform operators.** ADR section 7 requires an elevated permission separate from company roles. Operator authentication is unresolved. This proposal does not add an operator table and does not reuse company login.
-- **CSRF tokens.** CSRF for cookie-based authentication after login is unresolved (ADR section 6). This schema does not store CSRF tokens. The verified assessment HMAC is not a V2 decision.
-- **Company refresh sessions.** ADR decision 13 requires rotation and reuse detection, and it places the table in the tenant schema. This document does not define that table.
+- **CSRF tokens.** State-changing requests require a CSRF token and trusted `Origin` validation (ADR decision 18). This schema does not store CSRF tokens. The verified assessment HMAC is not a V2 decision.
+- **Company refresh sessions.** ADR decisions 12 and 13 place refresh sessions in the tenant schema. This document does not define that table.
 - **Folding `tenant_databases` into `tenants`.** Possible, but it mixes company lifecycle with connection metadata. This proposal keeps them separate.
 - **One row per provisioning operation.** A single row updated on retry would erase earlier failures. This proposal separates the logical request from attempt history.
 
@@ -146,14 +146,14 @@ Types below are the proposed PostgreSQL shape. Names are proposals. Constraints 
 | `name` | Display name. Not unique; two companies may share a label. |
 | `slug` | Unique stable key for operators. Not accepted from a browser as proof of access. |
 | `status` | Provisioning lifecycle only: `requested`, `provisioning`, `migrating`, `ready`, `failed`, `suspended`. |
-| `access_status` | Company access status: `active` or `deactivated`. Separate from `status`. Changing it does not change `status`, `provisioning_state`, or `routing_disposition`. |
+| `access_status` | Company access status: `onboard`, `active`, or `deactivated`. `NOT NULL`. Default `onboard`. Separate from `status`. Changing it does not change `status`, `provisioning_state`, or `routing_disposition`. |
 | `created_at`, `updated_at` | `timestamptz`, not null. |
 
-Checks: `status` is one of those six values. `access_status` is `active` or `deactivated`. Index: `status` only. This proposal does not add an index on `access_status`.
+Checks: `status` is one of those six values. `access_status` is `onboard`, `active`, or `deactivated`, and it is `NOT NULL`. Index: `status` only. This proposal does not add an index on `access_status`.
 
-`status = ready` is the provisioning gate for routing. It is not sufficient to authorize normal HRMS business APIs. Section 9 defines the ready evidence and the separate `access_status` check. The mechanism that stops a writer from setting `status` alone remains unresolved. No default is proposed for `access_status`. ADR-001 does not say which value a newly ready company starts with, and it does not say whether the column is nullable. This document does not select `active` or `deactivated`, does not add a default, and does not invent a transition that sets `access_status` when a tenant becomes `ready`. Those choices stay open in section 16.
+`status = ready` is the provisioning gate for routing. It is not sufficient to authorize normal HRMS business APIs. Section 9 defines the ready evidence and the separate `access_status` check. The mechanism that stops a writer from setting `status` alone remains unresolved. A new company starts with `access_status = onboard`. Becoming `ready` does not set `access_status` to `active`. Who may later change `access_status` stays open in section 16.
 
-This table is the registry used to resolve a company-specific login URL. It is not a public company directory, and it does not offer a company-selection login. Which registry column the URL carries is unresolved. Whatever key is used, that key only selects a row. It does not authorize the caller.
+This table is the registry used to resolve a company-specific subdomain. The initial deployment uses a tenant-specific subdomain under a shared domain. It is not a public company directory, and it does not offer a company-selection login. Which registry column the subdomain matches is unresolved. Whatever key is used, that key only selects a row. It does not authorize the caller.
 
 ### `tenant_databases`
 
@@ -224,7 +224,7 @@ An attempt row may be completed once: set `status`, `alembic_revision_after`, `e
 | `action` | For example `tenant.requested`, `tenant.suspended`, `database.migrated`, `database.quarantined`, `database.dropped`, `admin.bootstrapped`. |
 | `target_tenant_id` | Nullable foreign key to `tenants.id`. Proposed `ON DELETE RESTRICT`. |
 | `outcome` | `success` or `failure`. |
-| `detail` | JSON. No passwords, secret values, raw tokens, refresh-token hashes, or salary payloads. |
+| `detail` | JSON. No passwords, secret values, raw tokens, refresh-token digests, or salary payloads. |
 | `created_at` | `timestamptz`, not null. |
 
 Index: `(target_tenant_id, created_at)`, `(actor_ref, created_at)`.
@@ -242,13 +242,12 @@ The tenant schema, not this document, holds:
 - Company user accounts.
 - Employee IDs, unique within that tenant.
 - Password hashes. ADR section 6 keeps a slow hash such as Argon2id. The hash is not plaintext.
-- Employee status, `active` or `deactivated` (ADR decision 16).
-- The server-recorded employee deactivation timestamp, and that company’s choice of immediate revocation or a 12-hour document-only grace period (ADR decisions 17 and 18). This schema does not store those facts and does not add a `grace_until` column.
-- Refresh-session records. Only the refresh-token hash is persisted. The access JWT and the raw refresh token are not stored. Rotation and reuse detection are required.
+- `employment_status`, which governs employee access (ADR decision 16). There is no separate employee `access_status` and no document-grace column.
+- Refresh-session records. Refresh tokens are high-entropy opaque tokens. Only an HMAC-SHA-256 digest is persisted, using a server-side secret. The access JWT and the raw refresh token are not stored. Rotation is required. Reuse of a rotated token revokes only its affected token family or session. There is no concurrency grace period. An employee may hold multiple independent active sessions. Basic session and device metadata and `last_used` are stored there. IP history is not retained by default.
 
-Company access status is the opposite placement. `tenants.access_status` lives in this registry. It is not an employee column and not a tenant-schema policy.
+Company access status is the opposite placement. `tenants.access_status` lives in this registry. It is `NOT NULL`, defaults to `onboard`, and allows `onboard`, `active`, and `deactivated`. It is not an employee column.
 
-The refresh-session table, including any family, replacement, or reuse columns, belongs entirely to that tenant-schema design. ADR decision 13 says the same thing. This control-plane proposal does not create it and does not foreign-key it.
+The refresh-session table belongs entirely to that tenant-schema design. ADR decisions 12 and 13 fix the session behavior. This control-plane proposal does not create the table and does not foreign-key it.
 
 Login does not look up a control-plane email or a control-plane membership. The company-specific URL selects the registry row. The employee ID and password are then checked in the resolved tenant database. There is no public list of companies and no screen where the caller picks a company.
 
@@ -258,16 +257,16 @@ A person who works for two companies is not represented here. Each company accou
 
 **Assessment sessions.** ADR section 9 requires that existing `user_sessions` rows are not copied into tenant refresh-session records. Invalidate them. They have no user and no tenant. That is an ADR instruction, not an open choice in this document.
 
-**Company login.** Agreed flow, without choosing the unresolved token details in section 16:
+**Company login.** Agreed flow. Cookie names and `Path` remain open in section 16. The token and session rules below are ADR decisions 12, 13, and 18.
 
-1. The company-specific URL resolves one `tenants` row. An unknown URL fails closed. The response must not be a directory of other companies. The URL is not authorization.
-2. Load that tenant’s routing row. Reject the login unless the ready evidence in section 9 holds and `access_status = active`. A `deactivated` company is denied normal HRMS access even though the URL resolved. Do not change `status` to `suspended`.
+1. The company-specific subdomain resolves one `tenants` row. An unknown URL fails closed. The response must not be a directory of other companies. The URL is not authorization.
+2. Load that tenant’s routing row. Reject the login unless the ready evidence in section 9 holds and `access_status = active`. `onboard` and `deactivated` do not authorize normal HRMS access even though the URL resolved. Do not change `status` to `suspended`.
 3. Open a connection only to that tenant database.
-4. Check the company-assigned employee ID and password in that database. The password hash stays there.
-5. On success, the application issues an access JWT lasting 15 minutes and an opaque refresh token lasting 7 days, both in HttpOnly cookies. The refresh-token hash is stored only in that tenant database, by the tenant schema. The issued token is bound to the resolved tenant.
+4. Check the company-assigned employee ID and password in that database. The password hash stays there. Load the current role from that database. Do not trust a role embedded in a JWT.
+5. On success, the application issues an access JWT lasting 15 minutes and a high-entropy opaque refresh token lasting 7 days. Auth cookies use `HttpOnly`, `Secure`, and `SameSite=Lax`. Prefer host-only cookies rather than a shared parent-domain cookie. The refresh-token HMAC-SHA-256 digest is stored only in that tenant database, by the tenant schema. The issued token is bound to the resolved tenant. The claims are `sub`, `tenant_id`, `jti`, `iat`, `exp`, `iss`, and `aud`. Signing is RS256 with a `kid` and a trusted JWKS endpoint.
 6. A later request still has to show that the authenticated identity, the token’s tenant binding, the URL’s tenant, and the selected database are the same tenant.
 
-Cookie names, `Secure`, `SameSite`, `Path`, and `Domain` are unresolved. HttpOnly is required. CSRF after login is unresolved. JWT claims, signing keys, and further validation details are unresolved. Logout’s effect on an already-issued JWT is unresolved. Company and employee deactivation outcomes are decided in ADR decisions 15–19 and applied in sections 9 and 10. Whether a user may hold more than one refresh session is unresolved. Reuse detection is required, and the reuse response is unresolved.
+State-changing requests require a CSRF token and trusted `Origin` validation. Safe HTTP methods must not mutate state. Logout revokes the current refresh session and clears auth cookies. The access JWT may remain valid until its 15-minute expiry. Other device sessions remain active. Company and employee authorization outcomes are decided in ADR decisions 15–19 and applied in sections 9 and 10. An employee may hold multiple independent active sessions. Reuse of a rotated refresh token revokes only that token family or session. There is no concurrency grace period.
 
 **Platform operators.** Operator authentication is not this login. This schema does not define it and does not attach an operator to a company account so that company login can be reused.
 
@@ -312,9 +311,9 @@ Proposed evidence, with no cross-database foreign key:
 
 The role of that administrator is whatever the unresolved tenant role matrix later says. This document does not treat a particular role name as the evidence, and it does not point at the account.
 
-Ready evidences that this bootstrap happened. It does not mean that same person must stay active for the life of the tenant. Later employee deactivation is a tenant-database fact. Company deactivation is `tenants.access_status`. ADR decisions 15–19 decide the authorization outcome for both: a valid JWT is not enough.
+Ready evidences that this bootstrap happened. It does not mean that same person must keep the same `employment_status` for the life of the tenant. A later change to `employment_status` stays in the tenant database and does not change `tenants.access_status`. Company deactivation is `tenants.access_status`. ADR decisions 15–19 decide the authorization outcome: a valid JWT is not enough. This document does not define which carried-forward `ACTIVE` or `INACTIVE` value permits a request.
 
-Any tenant whose `status` is not `ready`, including `failed` and `suspended`, fails closed for normal HRMS business APIs and for document-only grace. A tenant that is `ready` with `access_status = deactivated` is also denied normal business APIs and document-only grace, including when a JWT or refresh token has not expired. Setting `access_status` does not set `status` to `suspended` and does not close another tenant’s pool. Document-only grace is considered only when `status = ready` and `access_status = active`. Employee status, the deactivation timestamp, and the company’s immediate or 12-hour policy are then enforced in the tenant database.
+Any tenant whose `status` is not `ready`, including `failed` and `suspended`, fails closed for normal HRMS business APIs. A tenant that is `ready` with `access_status` of `onboard` or `deactivated` is also denied those APIs, including when the access JWT has not expired. An unexpired refresh token does not authorize those APIs. Setting `access_status` does not set `status` to `suspended` and does not close another tenant’s pool. There is no document-access grace period. Employee access is then enforced from `employment_status` in the tenant database.
 
 ### Ready invariant
 
@@ -368,23 +367,23 @@ This path is for company traffic. It is not an operator path.
 **Login**
 
 1. Resolve the company-specific URL to one `tenants` row. Do not accept a tenant id or database name from the body, query, or header as the authority. Do not offer a company picker.
-2. Reject unless `tenants.status = ready`, the `tenant_databases` evidence in section 9 holds, including `routing_disposition = in_service`, and `access_status = active`. Fail closed when any of those conditions is missing or does not match. A `deactivated` company is denied normal HRMS access even though the URL resolved. Do not change `status` to `suspended` because the company is deactivated. This denial does not close or disrupt another tenant’s pool.
+2. Reject unless `tenants.status = ready`, the `tenant_databases` evidence in section 9 holds, including `routing_disposition = in_service`, and `access_status = active`. Fail closed when any of those conditions is missing or does not match. `onboard` and `deactivated` deny normal HRMS access even though the URL resolved. Do not change `status` to `suspended` because the company is `onboard` or `deactivated`. This denial does not close or disrupt another tenant’s pool.
 3. Open a connection only for that tenant database.
 4. Authenticate the employee ID and password in that database.
-5. Issue the HttpOnly access and refresh cookies. Persist only the refresh-token hash, through the tenant schema, in that same database.
+5. Issue the access and refresh cookies using the decision 12 defaults. Persist only the refresh-token HMAC-SHA-256 digest, through the tenant schema, in that same database.
 
 **Later business request**
 
 1. Resolve the tenant from the company URL again. The URL still is not authorization.
-2. Authenticate the presented access or refresh token. Claims, signing keys, and the detailed checks are unresolved. The required result is agreement among the authenticated identity, the token’s tenant binding, the resolved tenant, and the selected database. Fail closed on any disagreement.
-3. Load `tenants` and `tenant_databases` from the control plane. Do not load a company user, employee status, or refresh session from the control plane. Reject unless the ready evidence still holds, including `routing_disposition = in_service`, and `access_status = active`. Fail closed when any of those conditions is missing or does not match. A `deactivated` company is denied normal HRMS business APIs and document-only grace even when the JWT or refresh token is unexpired. Do not change `status` to `suspended` because the company is deactivated, and do not close or disrupt another tenant’s pool.
-4. Open or reuse a connection only for that tenant database when the request is still allowed. A deactivated company does not receive a normal business connection.
-5. Apply the company role and permission check in the tenant database. The matrix is unresolved. Consider document-only grace only when this control plane shows `status = ready` and `access_status = active`. The tenant database then enforces employee status, the server-recorded deactivation timestamp, and that company’s immediate-revocation or 12-hour policy.
+2. Authenticate the presented access token. Do not accept a refresh token as the credential for this request. Verify the JWT with the public keys from the trusted JWKS endpoint, and refresh JWKS when an unknown `kid` is encountered. The claims are those in ADR decision 12. Do not trust a role in the JWT. The required result is agreement among the authenticated identity, the token’s tenant binding, the resolved tenant, and the selected database. Fail closed on any disagreement. A refresh token is accepted only at the refresh endpoint, where it is exchanged for a new access token and the tenant database enforces rotation and reuse checks.
+3. Load `tenants` and `tenant_databases` from the control plane. Do not load a company user, `employment_status`, or refresh session from the control plane. Reject unless the ready evidence still holds, including `routing_disposition = in_service`, and `access_status = active`. Fail closed when any of those conditions is missing or does not match. `onboard` and `deactivated` deny normal HRMS business APIs even when the access JWT is unexpired. An unexpired refresh token does not authorize those APIs. Do not change `status` to `suspended` because the company is `onboard` or `deactivated`, and do not close or disrupt another tenant’s pool.
+4. Open or reuse a connection only for that tenant database when the request is still allowed. A company that is not `active` does not receive a normal business connection.
+5. Apply the company role and permission check in the tenant database, using the current role stored there. The matrix is unresolved. The tenant database then enforces `employment_status`. There is no document-access grace period.
 6. Release the connection as defined below, whether the request succeeds or fails.
 
-A non-ready, failed, or suspended tenant receives no business traffic and no document-only grace. Refresh-token rotation and reuse detection run in the tenant database. This document does not define the reuse response. Logout’s effect on an already-issued JWT, and the mechanism that invalidates the token itself, remain unresolved. Those open mechanics do not change the authorization outcomes in ADR decisions 15–19.
+A non-ready, failed, or suspended tenant receives no business traffic. Company `deactivated` also blocks normal HRMS access. Refresh-token rotation runs in the tenant database. Reuse of a rotated token revokes only that token family or session. There is no concurrency grace period. Logout revokes the current refresh session and clears auth cookies. The access JWT may remain valid until its 15-minute expiry. Other device sessions remain active. This schema does not add an access-token denylist.
 
-**Time-of-check/time-of-use.** Do not cache “this tenant is ready” or “this company is active” for the life of a token. Read `tenants.status` and `tenants.access_status` in the same request, before the tenant connection is used for business work. A short cache of those control-plane facts is unresolved. Employee status is not a control-plane column.
+**Time-of-check/time-of-use.** Do not cache “this tenant is ready” or “this company is active” for the life of a token. Read `tenants.status` and `tenants.access_status` on every protected request, before the tenant connection is used for business work. The initial design does not use a short-lived status cache (ADR decision 18). `employment_status` is not a control-plane column.
 
 If the routing lookup or the connection open fails, the request fails closed. It must not fall back to another tenant’s pool or to the assessment `DATABASE_URL`. One tenant’s failure does not require closing another tenant’s pool.
 
@@ -464,8 +463,8 @@ Suspension and deactivation do not delete control-plane rows:
 
 - `tenants.status = suspended` does not delete `platform_audit_events`, routing rows, or provisioning history. It is a provisioning block, not a change to `access_status`.
 - Company deactivation updates `tenants.access_status` to `deactivated`. It does not delete the tenant registry row, the routing row, or audit records, and it does not set `status` to `suspended`.
-- Employee deactivation stays in the tenant database. It does not rewrite platform audit rows. There is no control-plane session row to revoke.
-- Refresh-session revocation is tenant-local. This document does not describe its columns. The effect on an already-issued access JWT is unresolved.
+- `employment_status` stays in the tenant database. Changing it does not rewrite platform audit rows and does not add an employee access column. There is no control-plane session row to revoke.
+- Refresh-session revocation is tenant-local. This document does not describe its columns. Logout revokes the current refresh session and clears auth cookies. The access JWT may remain valid until its 15-minute expiry. Other device sessions remain active. This schema does not add an access-token denylist.
 
 Tenant deletion, retention, and offboarding are unresolved. `RESTRICT` is a proposed way to keep audit rows valid until that policy exists. It is not an approval to delete a tenant database, to archive audit rows, or to keep them forever. Section 16 holds that choice. Compensation in section 9 quarantines or records a drop of a partial database; it still does not delete the control-plane audit or the routing row.
 
@@ -479,7 +478,7 @@ Consequences of that proposal:
 
 **Backups and metrics are unresolved as an operational program.** ADR section 14 leaves backup, restore, disaster recovery, and the metrics that show Ready or Failed. ADR section 11 only records that per-company backup is a benefit of database-per-tenant. Proposed consequence, not a runbook: take the control-plane backup separately from each tenant database. Restoring a tenant database without its `tenant_databases` row leaves an orphan that section 14 refuses to route. Restoring the control plane without the tenant database leaves a registry entry that must not become `ready`. Frequencies, drills, and recovery-time targets are not chosen here.
 
-Fields that are safe to emit, if metrics are added later: tenant `public_id`, status, provisioning state, routing disposition, schema revision, attempt outcome, pool size, connection-acquire failure. Not safe: SQL that contains a password, raw tokens, refresh-token hashes, or password hashes. Which of those fields means Ready or Failed is unresolved.
+Fields that are safe to emit, if metrics are added later: tenant `public_id`, status, provisioning state, routing disposition, schema revision, attempt outcome, pool size, connection-acquire failure. Not safe: SQL that contains a password, raw tokens, refresh-token digests, or password hashes. Which of those fields means Ready or Failed is unresolved.
 
 Connection pools, when implemented, follow ADR section 7:
 
@@ -507,7 +506,7 @@ Connection pools, when implemented, follow ADR section 7:
 | Cross-tenant pool leak | Pools are keyed by the resolved tenant database configuration and are not shared. |
 | Salary data or refresh tokens copied into the control plane | Control-plane tables have no employee, salary, password-hash, or refresh-token columns. Platform audit JSON must not include those values. |
 | User deletion erases salary history | Proposed `changed_by` is a non-key string in the tenant database. There is no control-plane user cascade. |
-| Already-issued JWT while the company or employee is deactivated | ADR decisions 15–19 fix the authorization outcome. A valid JWT is not enough. A non-ready, failed, or suspended tenant fails closed, including for document grace. A ready but `deactivated` company is denied normal HRMS APIs and document grace even if the JWT or refresh token is unexpired. Employee grace is evaluated only when the control plane shows `ready` and `active`, and only in the tenant database. Logout, and the technical way the token itself is invalidated, stay open. This schema does not add an access-token denylist. |
+| Already-issued JWT while the company is not `active`, or the employee is no longer authorized | ADR decisions 15–19 fix the authorization outcome. A valid JWT is not enough. A non-ready, failed, or suspended tenant fails closed. A ready company whose `access_status` is `onboard` or `deactivated` is denied normal HRMS APIs even if the access JWT is unexpired. An unexpired refresh token does not authorize those APIs. There is no document-access grace period. Employee access follows `employment_status` in the tenant database. Logout revokes the current refresh session only. This schema does not add an access-token denylist. |
 
 ## 15. Test strategy
 
@@ -520,15 +519,15 @@ Prove at least:
 - A second company has its own database. Primary keys may overlap; routing still separates them.
 - A request that passes `tenant_id` or `database_name` for the other company still uses the URL’s tenant, and only when the token binding agrees.
 - A token bound to tenant A is rejected for tenant B.
-- After tenant `suspended` or any non-ready status, that tenant’s next business request fails, including document-only grace, and another ready tenant still routes.
-- A tenant with `status = ready` and `access_status = deactivated` is denied normal HRMS business APIs and document-only grace, including with an unexpired JWT, while another `active` tenant remains routable. `status` stays `ready`. Employee grace-policy cases are tenant-schema tests, not control-plane columns.
+- After tenant `suspended` or any non-ready status, that tenant’s next business request fails, and another ready tenant still routes.
+- A tenant with `status = ready` and `access_status` of `onboard` or `deactivated` is denied normal HRMS business APIs, including with an unexpired JWT, while another `active` tenant remains routable. `status` stays `ready`. There is no document-access grace period. `employment_status` cases are tenant-schema tests, not control-plane columns.
 - A connection checked out for tenant A is not used for tenant B, including when the company role check fails after the connection was acquired. The connection is not returned to tenant B’s pool.
 - The same idempotency key inserts another attempt and does not create a second database, a second routing row, or a second administrator for that same bootstrap request. The earlier failed attempt row still shows its error.
 - A migrate whose observed Alembic version disagrees with `schema_revision` or `target_revision` leaves `schema_revision` unchanged and does not mark the tenant ready.
 - A tenant row without the ready evidence, including a missing succeeded `bootstrap_admin` request, is denied. A database name with no tenant row is denied.
 - When the control plane cannot be reached, business calls fail and do not open another tenant’s database.
 - A company role cannot call platform provisioning. The operator path is tested only after section 16 chooses one.
-- Refresh-token rotation and reuse detection are tested in the tenant database. The reuse response stays unverified until that open question is decided.
+- Refresh-token rotation is tested in the tenant database. Reuse of a rotated token revokes only that token family or session. There is no concurrency grace period.
 - Existing employee, salary, audit, and analytics behavior still passes against a single test tenant database once those tests are pointed at the V2 login. Until that work exists, the assessment suite on `main` stays as it is.
 
 ## 16. Open decisions
@@ -539,14 +538,9 @@ Rows that assumed company users, memberships, or sessions in the control plane a
 
 | Topic | Alternatives and implications |
 |---|---|
-| Logout and token invalidation | Still open: whether logout revokes an access JWT immediately or leaves it for the rest of its 15-minute lifetime, and the mechanism that invalidates the token itself, such as a denylist or a token version. This schema has no access-token store. ADR decisions 15–19 are not open. They already require protected requests to enforce current company access status, employee status, permissions, and any valid document-only grace period. |
-| CSRF after login | Unresolved for cookie-based authentication. The assessment HMAC bound to a session id is verified current behavior, not the V2 design. This schema does not add a CSRF table. |
-| Cookie attributes | Names, `Secure`, `SameSite`, `Path`, and `Domain` are unresolved. HttpOnly is already required. |
-| Refresh reuse handling | Rotation and reuse detection are required in the tenant database. The response, token-family revocation, and concurrent refresh behavior are unresolved. Those columns are not designed here. |
-| JWT details | Claims, signing-key management, and validation beyond the agreement rule in ADR decision 8 are unresolved. |
-| Multiple refresh sessions | Whether one company user may hold more than one refresh session at a time is unresolved. The tenant schema has to wait for that choice. |
+| Cookie names and `Path` | `HttpOnly`, `Secure`, and `SameSite=Lax` are the initial defaults. Prefer host-only cookies rather than a shared parent-domain cookie (ADR decision 12). Cookie names and `Path` are unresolved. This schema does not store cookies. |
 | Platform-operator authentication | Unresolved and separate from company login. This proposal does not add an operator table, a `platform_role` column, or a company membership for operators. |
-| Login URL key | Which `tenants` value the company URL carries is unresolved. The chosen value selects a registry row and is not authorization. A public directory remains forbidden. |
+| Login URL key | The initial deployment uses a tenant-specific subdomain under a shared domain (ADR decision 8). Which `tenants` column that subdomain matches is unresolved. The chosen value selects a registry row and is not authorization. A public directory remains forbidden. |
 | Roles and permissions | The matrix is unresolved, including any starter names. ADR decision 9 still requires a company role check inside the tenant database. A company role is not the operator permission. |
 | First-admin onboarding | How the first person proves identity, how the password is set, and who may start `bootstrap_admin`. The account is created in the tenant database. The control-plane evidence is the succeeded provisioning request, not a user foreign key. |
 | Ready-flag enforcement | Application transaction and tests; a database trigger; or a single privileged writer. Only the latter two stop a direct SQL update of one `ready` flag. The trigger still cannot encode “revision accepted by this application build,” and it cannot foreign-key the tenant-local administrator. Whichever of those writers is later selected updates only the provisioning fields that transition names, including `tenants.status` and `tenant_databases.provisioning_state`. It does not set or clear `access_status`. Who owns that writer stays one of the three alternatives above. |
@@ -559,21 +553,19 @@ Rows that assumed company users, memberships, or sessions in the control plane a
 | Backup, restore, and disaster recovery | Separate control-plane and per-tenant backups are a consequence of the ADR, not a schedule. Restore order, drills, and recovery targets are open. A restore that pairs a registry row with the wrong database must not become `ready`. |
 | Readiness and failure metrics | Which signals mean Ready or Failed, beyond the stored status columns. Safe field names are listed in section 13. The operational definition is open. |
 | Cross-tenant analytics | Not in this schema. Any later platform report needs an operator path. It must not reuse a company user’s connection to another tenant (ADR section 11). |
-| Initial company access status | ADR-001 names `active` and `deactivated` and does not say which value a newly ready company starts with. No column default is proposed. Whether `access_status` is nullable is also open. This proposal does not select `active` or `deactivated`, and becoming `ready` does not set `access_status`. |
-| Company access-status changes | Open: who may change `access_status`; whether both `active` → `deactivated` and `deactivated` → `active` are permitted; which provisioning states, if any, are preconditions; whether every change must append a `platform_audit_events` row; which `action` value that row would use; and whether `actor_ref` may be null. The existing audit columns could record the event without a new actor entity or foreign key. This row does not require that audit row and does not select an actor. ADR-001 §7 item 8 still requires an elevated operator permission for registry and provisioning operations. It does not decide whether a change to `access_status` is one of those operations. Platform-operator authentication and concrete operator permissions stay open. |
-| Tenant-status caching | Recheck `tenants.status` and `tenants.access_status` on each business request, which is what section 10 specifies as the proposal. Or a short cache, which needs an invalidation story this document does not have. A cache that leaves a suspended or deactivated tenant authorized violates ADR section 6 and decisions 15–19. This row does not decide logout or the token-invalidation mechanism. |
+| Company access-status changes | The column is decided: `NOT NULL`, default `onboard`, values `onboard`, `active`, and `deactivated`. A new company starts as `onboard`. Becoming `ready` does not set `active`. Still open: who may change `access_status`; which transitions among `onboard`, `active`, and `deactivated` are permitted; which provisioning states, if any, are preconditions; whether every change must append a `platform_audit_events` row; which `action` value that row would use; and whether `actor_ref` may be null. The existing audit columns could record the event without a new actor entity or foreign key. This row does not require that audit row and does not select an actor. ADR-001 §7 item 8 still requires an elevated operator permission for registry and provisioning operations. It does not decide whether a change to `access_status` is one of those operations. Platform-operator authentication and concrete operator permissions stay open. |
 
 ## 17. Phased implementation and approval checklist
 
 Order, after this document is accepted. Acceptance is a separate decision. This review does not accept the schema. Section 16 items used by a phase have to be chosen before that phase starts. The tenant-schema design is a separate document and has to exist before company login can be implemented.
 
 1. Branch from the latest `develop/hrms-v2`. Do not commit the schema to `main`.
-2. Add a control-plane Alembic history with `tenants`, including `status` and `access_status`, and `tenant_databases`. Do not add company users, memberships, sessions, employee status, or a grace-period column.
+2. Add a control-plane Alembic history with `tenants`, including `status` and `access_status`, and `tenant_databases`. Do not add company users, memberships, sessions, an employee `access_status`, or a grace-period column.
 3. Add `provisioning_requests` and `provisioning_attempts`, including the target revision, observed Alembic versions, and `bootstrap_admin` evidence. Compensation sets `routing_disposition` and does not delete the routing row.
 4. Add `platform_audit_events` for those privileged steps. `target_tenant_id` uses `ON DELETE RESTRICT`. `actor_ref` stays a non-key label.
 5. Resolve a company URL to one registry row. Open that tenant database for normal HRMS access only when the ready evidence holds and `access_status = active`. A deactivated company stays `ready` if provisioning says so, and its denial does not close another tenant’s pool. Release connections as section 10 describes.
-6. In the tenant schema, add company users, employee status, the deactivation timestamp, the company grace policy, and refresh-session records. Do not add those tables or columns to the control plane. Company login then uses the employee ID and password in the resolved tenant database.
-7. Issue the HttpOnly access and refresh cookies only after the section 16 token and cookie choices that the implementation needs are recorded. Persist refresh-token hashes only in the tenant database.
+6. In the tenant schema, add company users and refresh-session records. Employee access uses `employment_status`. Do not add a separate employee `access_status` or a grace-period column. Do not add those authentication tables to the control plane. Company login then uses the employee ID and password in the resolved tenant database.
+7. Issue auth cookies with the ADR decision 12 defaults. Cookie names and `Path` still need a recorded choice before implementation. Persist refresh-token HMAC-SHA-256 digests only in the tenant database.
 8. Rehearse a copy of assessment employees, salaries, and audit rows into a disposable tenant database. Keep `changed_by` as a non-key value. Invalidate old assessment sessions. Do not copy them into refresh-session records.
 9. Run isolation tests and the existing regression tests against test databases only.
 10. Review and merge into `develop/hrms-v2` only.
@@ -586,9 +578,9 @@ Approval checklist:
 - [ ] No control-plane table for company users, memberships, password hashes, or refresh sessions.
 - [ ] No plaintext database password column, and no cross-database foreign key to a company user.
 - [ ] The runtime credential is not a superuser and is not the credential that creates databases or applies migrations.
-- [ ] `tenants.status` stays the six provisioning values, and `access_status` is only `active` or `deactivated`.
-- [ ] A non-ready, failed, or suspended tenant fails closed, including for document-only grace, without taking another tenant’s database offline.
-- [ ] A ready but deactivated company is denied normal HRMS APIs and document-only grace without setting `status` to `suspended`.
+- [ ] `tenants.status` stays the six provisioning values, and `access_status` is `NOT NULL` with default `onboard` and values `onboard`, `active`, and `deactivated`.
+- [ ] A non-ready, failed, or suspended tenant fails closed without taking another tenant’s database offline.
+- [ ] A ready company whose access status is `onboard` or `deactivated` is denied normal HRMS APIs without setting `status` to `suspended`. There is no document-access grace period.
 - [ ] The login URL and client tenant or database fields are not authorization.
 - [ ] A failed authorization after checkout cannot return the connection to another tenant.
 - [ ] Provisioning retries add attempt rows and cannot create a second database for the same stored name.
@@ -601,7 +593,7 @@ Approval checklist:
 
 Checked against `docs/product/decisions/ADR-001-multi-tenancy.md` after company authentication moved into the tenant database. This pass does not approve the schema.
 
-**Aligned with the ADR.** Shared application, one business database per company, company users and refresh-token hashes in that database, control-plane registry, routing, provisioning status, company access status, and platform operations, login URL selects the tenant and is not authorization, the identity, token binding, tenant, and database must agree, no public company directory, no company-selection login, no cross-database user foreign key, first administrator created in the tenant database, non-superuser runtime access, secret references instead of plaintext database passwords, bounded pools, fail-closed provisioning, a ready but deactivated company denied normal APIs and document grace, one tenant’s failure or deactivation does not stop the others, per-tenant Alembic rollout, no assumed downgrade of every tenant, assessment sessions invalidated rather than copied, and implementation only on `develop/hrms-v2`.
+**Aligned with the ADR.** Shared application, one business database per company, company users and refresh-token digests in that database, control-plane registry, routing, provisioning status, company access status, and platform operations, a tenant subdomain selects the tenant and is not authorization, the identity, token binding, tenant, and database must agree, no public company directory, no company-selection login, no cross-database user foreign key, first administrator created in the tenant database, non-superuser runtime access, secret references instead of plaintext database passwords, bounded pools, fail-closed provisioning, `access_status` of `onboard`, `active`, or `deactivated` kept separate from provisioning status, `ready` does not set `active`, company `deactivated` and provisioning `suspended` both block normal HRMS access, no document-access grace period, one tenant’s failure or deactivation does not stop the others, per-tenant Alembic rollout, no assumed downgrade of every tenant, assessment sessions invalidated rather than copied, and implementation only on `develop/hrms-v2`.
 
 **Corrections in this edit.**
 
@@ -609,10 +601,10 @@ Checked against `docs/product/decisions/ADR-001-multi-tenancy.md` after company 
 - Company login is employee ID and password in the tenant database selected by the company URL. It is not a control-plane email lookup and not a membership lookup.
 - First-administrator evidence is a succeeded `bootstrap_admin` provisioning request. `first_admin_membership_id` is gone.
 - Platform audit no longer has `actor_user_id`. `actor_ref` is a non-key label. `target_tenant_id` still references `tenants`.
-- The refresh-session table is explicitly left to the tenant-schema design. Rotation and reuse detection stay required. The reuse response stays open.
+- The refresh-session table is explicitly left to the tenant-schema design. Refresh tokens are high-entropy opaque tokens. Only the HMAC-SHA-256 digest is stored, in the tenant database. Rotation is required. Reuse of a rotated token revokes only that token family or session. There is no concurrency grace period. Multiple independent sessions are allowed. Basic session and device metadata and `last_used` are stored. IP history is not retained by default.
 - Superseded open rows for control-plane identity, email uniqueness, membership constraints, and session cutover. Session cutover now follows ADR section 9.
-- Added `tenants.access_status` for ADR decisions 15 and 19. `tenants.status` remains the six-value provisioning lifecycle. Employee status, the deactivation timestamp, and the grace policy stay in the tenant schema.
+- `tenants.access_status` is `NOT NULL`, defaults to `onboard`, and allows `onboard`, `active`, and `deactivated`. `tenants.status` remains the six-value provisioning lifecycle. Employee access stays on tenant `employment_status`. There is no document-grace column.
 
-**Remaining decisions.** The open rows in section 16, including logout and the token-invalidation mechanism, the initial `access_status` of a newly ready company, CSRF, cookie attributes, refresh reuse behavior, JWT details, multiple refresh sessions, and platform-operator authentication. ADR decisions 15–19 are not in that open list. None of the section 16 rows is settled by this document.
+**Remaining decisions.** The open questions in section 16, including cookie names and `Path`, which registry column the subdomain matches, who may change `access_status` and which transitions are permitted, and platform-operator authentication. ADR decisions 12–19 are not reopened there. Settled facts recorded inside an open row, such as the cookie attribute defaults and the `access_status` column rules, stay decided.
 
 This document proposes a schema only. No application code, database schema, migration, or tenant provisioning has been changed.
